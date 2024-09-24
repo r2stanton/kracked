@@ -2,7 +2,30 @@ import websocket, json, threading, hashlib, toml
 import urllib.parse, hmac, base64, time, requests
 
 
-class BaseKrakenFeed:
+class BaseKrakenWS:
+
+    def __init__(self, auth=True, trace=False, api_key=None, secret_key=None):
+        self.auth = auth
+        self.trace = trace
+        self.api_key = api_key
+        self.secret_key = secret_key
+
+    def launch(self):
+        """
+        Starts the websocket thread. For the BaseKrakenWS, this simply opens 
+        an authenticated (e.g. you need to provide API/Secret) L3 data stream
+        for BTC/USD.
+        """
+
+        websocket_thread = threading.Thread(target=self.run_websocket)
+        websocket_thread.start()
+
+        try:
+            websocket_thread.join()
+
+        except KeyboardInterrupt:
+            print("Exiting...")
+
 
     def get_kraken_signature(self, urlpath, data, secret):
         """
@@ -54,6 +77,7 @@ class BaseKrakenFeed:
         Kraken response (e.g. your ws token)
 
         """
+
         url = "https://api.kraken.com/0/private/GetWebSocketsToken"
         nonce = int(time.time() * 1000)
 
@@ -61,8 +85,13 @@ class BaseKrakenFeed:
 
         headers = {
             "API-Key": api_key,
-            "API-Sign": get_kraken_signature("/0/private/GetWebSocketsToken", data, api_secret)
+            "API-Sign": self.get_kraken_signature(
+                "/0/private/GetWebSocketsToken",
+                data,
+                api_secret
+            )
         }
+
         response = requests.post(url, headers=headers, data=data)
         if response.status_code == 200:
             return response.json()['result']['token']
@@ -70,48 +99,59 @@ class BaseKrakenFeed:
             raise Exception(f"Failed to get WebSocket token: {response.text}")
 
 
-    def on_message(self, ws, message):
+    def _on_message(self, ws, message):
         """
         ***THIS IS THE KEY FUNCTION TO OVERWRITE TO EXTEND FUNCTIONALITY***
         
-        The base class simply prints the message.
-        """
-        print(type(message))
+        The base class simply prints the message. These functions are not 
+        intended to be called, they are passed to the WebSocketApp.
 
-    def on_error(self, ws, error):
+        Params:
+        =======
+        ws: 
+            The websocket.
+        message:
+            Received message.
         """
+        print(message)
+
+    def _on_error(self, ws, error):
+        """
+        Error message for Kraken websocket errors.
+
+        You may want to change this to log to some file.
         """
 
         print(f"\n================Error====================")
         print(error)
         print(f"===========================================\n")
 
-    def on_close(ws, close_status_code, close_msg):
+    def _on_close(self, ws, close_status_code, close_msg):
+        """
+        Close message for Kraken connection.
+        """
         print(f"\n===========================================")
         print("========WebSocket connection closed======")
         print(f"===========================================\n")
 
-    def on_open(ws):
+    def _on_open(self, ws):
+
+        """
+        Open message for Kraken connection.
+        """
+
         print("Kraken v2 Connection Opened.")
         
         # Authentication
         with open("/home/alg/.api.toml", "r") as fil:
             data = toml.load(fil)
 
-        api_key = data['kraken_api']
-        api_secret = data['kraken_sec']
-        ws_token = get_ws_token(api_key, api_secret)
+        api_key = self.api_key
+        api_secret = self.secret_key
+        ws_token = self.get_ws_token(api_key, api_secret)
         
-        # auth_message = {
-            # "event": "subscribe",
-            # "subscription": {
-                # "name": "ownTrades",
-                # "token": ws_token
-            # }
-        # }
-        # ws.send(json.dumps(auth_message))
         
-        # Subscribe to a public channel (e.g., ticker for BTC/USD)
+        # DUMMY SUBSCRIPTION EXAMPLE. REUQUIRES AUTH.
         subscription = {
             "method": "subscribe",
             "params": {
@@ -122,15 +162,31 @@ class BaseKrakenFeed:
         }
         ws.send(json.dumps(subscription))
 
-    def run_websocket():
-        websocket.enableTrace(False)
-        conn = "wss://ws.kraken.com/v2"
-        conn = "wss://ws-auth.kraken.com/v2"
+    def run_websocket(self):
+        websocket.enableTrace(self.trace)
+
+        if self.auth:
+            conn = "wss://ws-auth.kraken.com/v2"
+        else:
+            conn = "wss://ws.kraken.com/v2"
+
         ws = websocket.WebSocketApp(conn,
-                                    on_open=on_open,
-                                    on_message=on_message,
-                                    on_error=on_error,
-                                    on_close=on_close)
+                                    on_open=self._on_open,
+                                    on_message=self._on_message,
+                                    on_error=self._on_error,
+                                    on_close=self._on_close)
         
         ws.run_forever()
 
+
+with open(f"/home/alg/.api.toml", "r") as fil:
+    data = toml.load(fil)
+api_key = data['kraken_api']
+api_secret = data['kraken_sec']
+
+myws = BaseKrakenWS(auth=True,
+                    trace=False,
+                    api_key=api_key,
+                    secret_key=api_secret)
+
+myws.launch()
