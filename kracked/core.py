@@ -1,7 +1,6 @@
 import websocket, json, threading, hashlib, toml
 import urllib.parse, hmac, base64, time, requests
 
-
 class BaseKrakenWS:
 
     def __init__(self, auth=True, trace=False, api_key=None, secret_key=None):
@@ -141,10 +140,6 @@ class BaseKrakenWS:
         """
 
         print("Kraken v2 Connection Opened.")
-        
-        # Authentication
-        with open("/home/alg/.api.toml", "r") as fil:
-            data = toml.load(fil)
 
         api_key = self.api_key
         api_secret = self.secret_key
@@ -179,14 +174,15 @@ class BaseKrakenWS:
         ws.run_forever()
 
 
-with open(f"/home/alg/.api.toml", "r") as fil:
-    data = toml.load(fil)
-api_key = data['kraken_api']
-api_secret = data['kraken_sec']
+if __name__ == "__main__":
+    with open(f"/home/alg/.api.toml", "r") as fil:
+        data = toml.load(fil)
+    api_key = data['kraken_api']
+    api_secret = data['kraken_sec']
 
-myws = BaseKrakenWS(auth=True,
-                    trace=False,
-                    api_key=api_key,
-                    secret_key=api_secret)
+    myws = BaseKrakenWS(auth=True,
+                        trace=False,
+                        api_key=api_key,
+                        secret_key=api_secret)
 
-myws.launch()
+    myws.launch()
