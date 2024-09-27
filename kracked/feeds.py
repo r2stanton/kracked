@@ -83,21 +83,80 @@ class KrakenL3(BaseKrakenWS):
             "method": "subscribe",
             "params": {
                 "channel": "level3",
-                "symbol": ["BTC/USD"],
+                "symbol": self.symbols,
                 "token": ws_token
             }
         }
 
         ws.send(json.dumps(subscription)) 
 
+
+class KrakenL2(BaseKrakenWS):
+
+    """
+    Class extending BaseKrakenWS geared towards L3 feeds from the Kraken v2 API.
+    """
+
+    def __init__(self, symbols, api_key=None, secret_key=None,trace=False,
+                 depth = 10,
+                 out_file_name="output.csv", write_every=100):
+
+        assert depth in [10, 25, 100, 500, 1000] , "Depths allowed: 10, 25, 100, 500, 1000"
+
+        if type(symbols) == str:
+            symbols = [symbols]
+
+        self.depth = depth
+        self.symbols = symbols
+        self.auth = False
+        self.trace = trace
+        self.api_key = api_key
+        self.api_secret = secret_key
+        self.write_every = write_every
+        self.out_file_name = out_file_name
+
+
+    def _on_message(self, ws, message):
+        response = json.loads(message)
+        print(response)
+
+
+    def _on_open(self, ws):
+        """
+        Open message for Kraken L3 connection.
+        """
+
+        print("Kraken v2 Connection Opened.")
+        ws_token = self.get_ws_token(self.api_key, self.api_secret)
+        
+        subscription = {
+            "method": "subscribe",
+            "params": {
+                "channel": "book",
+                "symbol": self.symbols,
+                "token": ws_token
+            }
+        }
+
+        ws.send(json.dumps(subscription)) 
+
+
 with open(f"/home/alg/.api.toml", "r") as fil:
     data = toml.load(fil)
 api_key = data['kraken_api']
 api_secret = data['kraken_sec']
+
 
 l3feed = KrakenL3("BTC/USD",
                   trace=False, 
                   api_key=api_key,
                   secret_key=api_secret)
 
-l3feed.launch()
+l2feed = KrakenL2("BTC/USD",
+                  trace=False, 
+                  api_key=api_key,
+                  secret_key=api_secret)
+
+
+# l3feed.launch()
+l2feed.launch()
