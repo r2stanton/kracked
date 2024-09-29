@@ -114,11 +114,29 @@ class KrakenL2(BaseKrakenWS):
         self.api_secret = secret_key
         self.write_every = write_every
         self.out_file_name = out_file_name
+        self.ask_prices = []
+        self.bid_prices = []
+        self.ask_volumes = []
+        self.bid_volumes = []
 
 
     def _on_message(self, ws, message):
         response = json.loads(message)
         print(response)
+        exit(1)
+        if response['channel'] == 'heartbeat':
+            pass
+        else:
+            data = response['data']
+            if 'bids' in response['data'][0].keys() and 'asks' in response['data'][0].keys():
+                bids = response['data'][0]['bids']
+                asks = response['data'][0]['asks']
+                if len(bids) > 0:
+                    for bid in bids:
+                        print(bid)
+                if len(asks) > 0:
+                    for bid in bids:
+                        print(bid)
 
 
     def _on_open(self, ws):
