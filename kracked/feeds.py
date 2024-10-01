@@ -1,4 +1,5 @@
 from kracked.core import BaseKrakenWS
+import numpy as np
 import toml, json
 
 class KrakenL3(BaseKrakenWS):
@@ -114,29 +115,67 @@ class KrakenL2(BaseKrakenWS):
         self.api_secret = secret_key
         self.write_every = write_every
         self.out_file_name = out_file_name
-        self.ask_prices = []
-        self.bid_prices = []
-        self.ask_volumes = []
-        self.bid_volumes = []
+        self.ask_prices = np.zeros(self.depth)
+        self.bid_prices = np.zeros(self.depth)
+        self.ask_volumes = np.zeros(self.depth)
+        self.bid_volumes = np.zeros(self.depth)
+        self.count = 0
 
 
     def _on_message(self, ws, message):
         response = json.loads(message)
-        print(response)
-        exit(1)
-        if response['channel'] == 'heartbeat':
-            pass
-        else:
-            data = response['data']
-            if 'bids' in response['data'][0].keys() and 'asks' in response['data'][0].keys():
-                bids = response['data'][0]['bids']
-                asks = response['data'][0]['asks']
-                if len(bids) > 0:
-                    for bid in bids:
-                        print(bid)
-                if len(asks) > 0:
-                    for bid in bids:
-                        print(bid)
+        self.count += 1
+        # print(response)
+
+        if 'method' in response.keys():
+            print("SKIPPED BECAUSE OF METHOD")
+            print(response)
+            ...
+
+        if 'channel' in response.keys():
+
+            if response['channel'] == 'heartbeat' or response['channel'] == 'status':
+                print("SKIPPED BECAUSE HEARTBEAT OR STATUS MESSAGE")
+                pass
+
+            elif response['type'] == 'snapshot':
+
+                # Pull data
+                data = response['data']
+                print(data['price'])
+
+                # Bids -> Asserts snapshot fills the orderbook (w.r.t self.depth)
+                bids = data['bids']
+                assert len(bids) == self.depth , "Snapshot should be full book refresh."
+
+
+                # Asks -> Asserts snapshot fills the orderbook (w.r.t self.depth)
+                asks = data['asks']
+                assert len(asks) == self.depth , "Snapshot should be full book refresh."
+
+                print('here')
+                self.bid_prices = np.array([b['price'] for b in bids])
+                self.ask_prices = np.array([a['price'] for a in asks])
+
+                print("\n\n\n@@@@@\n\n\n")
+                print(self.bid_prices)
+                print(self.ask_prices)
+
+                exit(1)
+
+            else:
+
+                data = response['data']
+                print(response)
+                if 'bids' in response['data'][0].keys() and 'asks' in response['data'][0].keys():
+                    bids = response['data'][0]['bids']
+                    asks = response['data'][0]['asks']
+                    if len(bids) > 0:
+                        for bid in bids:
+                            print(bid)
+                    if len(asks) > 0:
+                        for bid in bids:
+                            print(bid)
 
 
     def _on_open(self, ws):
