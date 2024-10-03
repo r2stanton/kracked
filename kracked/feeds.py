@@ -125,24 +125,24 @@ class KrakenL2(BaseKrakenWS):
     def _on_message(self, ws, message):
         response = json.loads(message)
         self.count += 1
-        # print(response)
 
         if 'method' in response.keys():
-            print("SKIPPED BECAUSE OF METHOD")
-            print(response)
-            ...
+            # Pass these.
+            pass
 
         if 'channel' in response.keys():
 
+            # Skip heartbeats and status messges.
             if response['channel'] == 'heartbeat' or response['channel'] == 'status':
-                print("SKIPPED BECAUSE HEARTBEAT OR STATUS MESSAGE")
                 pass
 
+            # Snapshots reset the orderbook from our manual update process.
             elif response['type'] == 'snapshot':
-
                 # Pull data
                 data = response['data']
-                print(data['price'])
+                if len(data) != 1:
+                    raise ValueError("Data longer than expected")
+                data = data[0]
 
                 # Bids -> Asserts snapshot fills the orderbook (w.r.t self.depth)
                 bids = data['bids']
@@ -153,29 +153,34 @@ class KrakenL2(BaseKrakenWS):
                 asks = data['asks']
                 assert len(asks) == self.depth , "Snapshot should be full book refresh."
 
-                print('here')
-                self.bid_prices = np.array([b['price'] for b in bids])
-                self.ask_prices = np.array([a['price'] for a in asks])
+                self.bids = {b['price']:b['qty'] for b in bids}
+                self.asks = {a['price']:a['qty'] for a in asks}
 
-                print("\n\n\n@@@@@\n\n\n")
+                self.bids = np.array([b['price'] for b in bids])
+                self.asks = np.array([a['price'] for a in asks])
+
                 print(self.bid_prices)
                 print(self.ask_prices)
-
-                exit(1)
+                self.bbo_b = self.bid_prices = 0
+                self.bbo_a = self.ask_prices = 0
 
             else:
-
                 data = response['data']
-                print(response)
-                if 'bids' in response['data'][0].keys() and 'asks' in response['data'][0].keys():
+                if ('bids' in response['data'][0].keys()) & \
+                   ('asks' in response['data'][0].keys()):
+
                     bids = response['data'][0]['bids']
                     asks = response['data'][0]['asks']
+
                     if len(bids) > 0:
+                        print("Bids")
                         for bid in bids:
                             print(bid)
+
                     if len(asks) > 0:
-                        for bid in bids:
-                            print(bid)
+                        print("Asks")
+                        for ask in asks:
+                            print(ask)
 
 
     def _on_open(self, ws):
