@@ -6,16 +6,19 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import numpy as np
 import json
-
+BG_COL='#f0f0f0'
+# BG_COL='gray'
 # Initialize the Dash app
 app = dash.Dash(__name__)
 
 # Layout of the app using CSS Grid
 app.layout = html.Div(style={
     'display': 'grid',
-    'gridTemplateColumns': '70% 30%',  # Left column is smaller than right column
+    'gridTemplateColumns': '50% 50%',  # Left column is smaller than right column
     'gridTemplateRows': '1fr 1fr',  # Two equal rows
-    'gap': '10px'
+    'gap': '1px',
+    'backgroundColor':BG_COL,
+
 }, children=[
     dcc.Graph(id='live-update-graph-1'),  # Plot 1 in (1, 1)
     dcc.Graph(id='live-update-graph-2'),  # Plot 2 in (2, 1)
@@ -77,8 +80,19 @@ def update_graphs(n):
             xaxis=dict(showgrid=False),
             xaxis2=dict(showgrid=False),
             yaxis=dict(showgrid=False),
-            yaxis2=dict(showgrid=False)
+            yaxis2=dict(showgrid=False),
+            showlegend=False,
         )
+        figure1.update_layout(
+            shapes=[dict( type="rect", xref="paper", yref="paper",
+                    x0=0, y0=0, x1=1, y1=1,
+                    line=dict(color="black", width=1)
+                    )],
+            margin=dict(t=50, b=50, l=50, r=50),  # Add some margin
+            paper_bgcolor=BG_COL,
+            plot_bgcolor=BG_COL,
+        )
+
 
         # Update x-axis properties
         figure1.update_xaxes(title_text='Time', row=2, col=1, linecolor='black', linewidth=1)
@@ -97,6 +111,8 @@ def update_graphs(n):
 
         figure2.update_layout(title='Plot 2: Bar Graph',
                               xaxis_title='Time',
+                              paper_bgcolor=BG_COL,
+                              plot_bgcolor=BG_COL,
                               yaxis_title='Value')
 
         # Create third figure (Plot 3)
@@ -147,6 +163,8 @@ def update_graphs(n):
             ),
             showlegend=False,
             height=500,
+            paper_bgcolor=BG_COL,
+            plot_bgcolor=BG_COL,
         )
 
         return figure1, figure2, figure3
