@@ -1,7 +1,8 @@
 from kracked.core import BaseKrakenWS
 from zlib import crc32 as CRC32
 import numpy as np
-import toml, json
+import toml, json, os
+import datetime
 
 import logging
 
@@ -108,7 +109,8 @@ class KrakenL2(BaseKrakenWS):
 
     def __init__(self, symbols, api_key=None, secret_key=None,trace=False,
                  depth = 10,
-                 out_file_name="output.csv", log_every=5):
+                 out_file_name="output.csv", log_every=20,
+                 log_bbo_every=100):
 
         assert depth in [10, 25, 100, 500, 1000] , "Depths allowed: 10, 25, 100, 500, 1000"
 
@@ -122,6 +124,7 @@ class KrakenL2(BaseKrakenWS):
         self.api_key = api_key
         self.api_secret = secret_key
         self.log_every = log_every
+        self.log_bbo_every = log_bbo_every
         self.out_file_name = out_file_name
         self.ask_prices = [0.0]*self.depth
         self.bid_prices = [0.0]*self.depth
@@ -180,23 +183,6 @@ class KrakenL2(BaseKrakenWS):
 
             else:
                 self.count += 1
-
-                if self.count % self.log_every:
-                    output = True
-                    full_L2_orderbook = {'b': self.bids,
-                                         'a': self.asks}
-                    with open("L2_orderbook.json", "w") as fil:
-                        json.dump(full_L2_orderbook, fil)
-
-
-                else:
-                    output = False
-
-                if output:
-                    print("\n")
-                    print("ASK INFO")
-                    print(self.ask_prices)
-                    print(self.asks)
 
                 data = response['data']
                 if ('bids' in response['data'][0].keys()) & \
@@ -287,6 +273,37 @@ class KrakenL2(BaseKrakenWS):
                             ws.close()
                             raise ValueError(f"MBP Depth is lower than {self.depth}")
 
+                if self.count % self.log_every:
+                    output = True
+                    full_L2_orderbook = {'b': self.bids,
+                                         'a': self.asks}
+
+                    with open("L2_orderbook.json", "w") as fil:
+                        json.dump(full_L2_orderbook, fil)
+                else:
+                    output = False
+
+                if self.count % self.log_bbo_every == 0:
+                    print("here")
+                    if not os.path.exists("L1_BBO.csv"):
+                        with open("L1_BBO.csv", "w") as fil:
+                            fil.write("timestamp,bbo,bao\n")
+                    else:
+                        with open("L1_BBO.csv", "a") as fil:
+                            now = datetime.datetime.now()
+                            BBO = np.max(self.bid_prices)
+                            BAO = np.min(self.ask_prices)
+                            fil.write(f"{now},{BBO},{BAO}\n")
+
+                if output:
+                    print("\n")
+                    print("ASK INFO")
+                    print(self.ask_prices)
+                    print(self.asks)
+
+                        
+
+
 
 
     def _book_checksum(self, ws, checksum):
@@ -358,7 +375,7 @@ api_secret = data['kraken_sec']
 #                   trace=False, 
 #                   api_key=api_key,
 #                   secret_key=api_secret)
-
+os.system("rm L1_BBO.csv")
 l2feed = KrakenL2("BTC/USD",
                   trace=False, 
                   api_key=api_key,
