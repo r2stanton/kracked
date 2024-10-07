@@ -13,6 +13,7 @@ with open("/home/alg/.api.toml", "r") as fil:
 
 API_KEY = data['kraken_api']
 API_SECRET = data['kraken_sec']
+
 async def get_ws_token():
     endpoint = "/0/private/GetWebSocketsToken"
     url = "https://api.kraken.com" + endpoint
