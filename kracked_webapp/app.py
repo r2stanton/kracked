@@ -3,6 +3,9 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 import pandas as pd
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
+import numpy as np
+import json
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
@@ -29,10 +32,24 @@ app.layout = html.Div(style={
 def update_graphs(n):
     try:
         # Read data from CSV file
-        df = pd.read_csv('data.csv')
+        df = pd.read_csv('../kracked/L1_BBO.csv')
+
+
+        with open("../kracked/L2_orderbook.json", 'r') as f:
+            data_unp = json.load(f)
+        data = {}
+        for dk in data_unp['b'].keys():
+            data[dk] = data_unp['b'][dk]
+        for dk in data_unp['a'].keys():
+            data[dk] = data_unp['a'][dk]
+        myKeys = list(data.keys())
+        myKeys.sort()
+        # Sorted Dictionary
+        data = {i: data[i] for i in myKeys}
+
 
         # Ensure the 'timestamp' column is present
-        if 'timestamp' not in df.columns or 'value' not in df.columns:
+        if 'timestamp' not in df.columns or 'bbo' not in df.columns or 'bao' not in df.columns:
             raise ValueError("CSV must contain 'timestamp' and 'value' columns.")
 
         # Convert the 'timestamp' column to datetime
@@ -40,19 +57,42 @@ def update_graphs(n):
 
         # Create first figure (Plot 1)
         figure1 = go.Figure()
-        figure1.add_trace(go.Scatter(x=df['timestamp'],
-                                     y=df['value'],
-                                     mode='lines+markers'), 
-                          )
+        figure1 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.0,
+                            subplot_titles=("BBO Data", ""))
 
-        figure1.update_layout(title='Plot 1: Data Over Time',
-                              xaxis_title='Time',
-                              yaxis_title='Value')
+        # Add traces for BBO
+        figure1.add_trace(go.Scatter(x=df['timestamp'], y=df['bbo'], mode='lines+markers', name='BBO'),
+                           row=1, col=1
+        )
+
+        # Add traces for BAO
+        figure1.add_trace(go.Scatter(x=df['timestamp'], y=df['bao']-df['bbo'], mode='lines+markers', name='Spread'),
+                           row=2, col=1
+        )
+
+        # Update layout
+        figure1.update_layout(
+            # title_text='Plot 1: Data Over Time',
+            height=500,  # Adjust the height to accommodate two subplots
+            xaxis=dict(showgrid=False),
+            xaxis2=dict(showgrid=False),
+            yaxis=dict(showgrid=False),
+            yaxis2=dict(showgrid=False)
+        )
+
+        # Update x-axis properties
+        figure1.update_xaxes(title_text='Time', row=2, col=1, linecolor='black', linewidth=1)
+        figure1.update_xaxes(title_text='', row=1, col=1, linecolor='black', linewidth=1,)
+
+        # Update y-axis properties
+        figure1.update_yaxes(title_text='BBO', row=1, col=1, linecolor='black', linewidth=1)
+        figure1.update_yaxes(title_text='Spread', row=2, col=1, linecolor='black', linewidth=1)
+
 
         # Create second figure (Plot 2)
         figure2 = go.Figure()
         figure2.add_trace(go.Bar(x=df['timestamp'],
-                                 y=df['value'],
+                                 y=df['bao'],
                                  marker=dict(line=dict(color='black', width=3))))
 
         figure2.update_layout(title='Plot 2: Bar Graph',
@@ -61,14 +101,53 @@ def update_graphs(n):
 
         # Create third figure (Plot 3)
         figure3 = go.Figure()
-        figure3.add_trace(go.Scatter(x=df['value'],
-                                     y=df['timestamp'],
-                                     mode='markers'))
+        stock_prices = list(data.keys())
+        stock_volumes = list(data.values())
 
-        figure3.update_layout(title='Plot 3: Value vs Time',
-                              xaxis_title='Value',
-                              yaxis_title='Time',
-                              yaxis_autorange='reversed')
+        # Fixed length for bars
+        fixed_length = 3.0
+
+        # Calculate the lengths of each bar based on the stock volumes
+        filled_lengths = np.array([(vol / max(stock_volumes)) * fixed_length for vol in stock_volumes])
+
+        # Create indices for equally spacing the bars
+        top_indices = list(range(10))
+        bottom_indices = list(range(12, 22))  # Shifted to create space
+
+        # Create the figure
+        # Add horizontal bars for the top 10 (green)
+
+        figure3.add_trace(go.Bar(
+            y=top_indices,
+            # x=filled_lengths[:10],
+            orientation='h',
+            marker=dict(color='green'),
+            hoverinfo='text',
+            text=[f'Price: {price}, Volume: {volume}' for price, volume in zip(stock_prices[:10], stock_volumes[:10])],
+        ))
+
+        # Add horizontal bars for the bottom 10 (red)
+        figure3.add_trace(go.Bar(
+            y=bottom_indices,
+            x=filled_lengths[10:],
+            orientation='h',
+            marker=dict(color='red'),
+            hoverinfo='text',
+            text=[f'Price: {price}, Volume: {volume}' for price, volume in zip(stock_prices[10:], stock_volumes[10:])],
+        ))
+
+        # Update layout to label y-axis with stock prices
+        figure3.update_layout(
+            title='Stock Prices vs Volume',
+            xaxis=dict(title='Volume (scaled)'),
+            yaxis=dict(
+                title='Stock Prices',
+                tickvals=top_indices + bottom_indices,
+                ticktext=stock_prices,
+            ),
+            showlegend=False,
+            height=500,
+        )
 
         return figure1, figure2, figure3
 
