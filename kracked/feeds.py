@@ -50,7 +50,6 @@ class KrakenL3(BaseKrakenWS):
                 asks = response['data'][0]['asks']
                 if len(bids) > 0:
                     for bid in bids:
-                        print(bid)
                         info = ['b',                # Side
                                 bid['timestamp'],   # Time
                                 bid['limit_price'], # Price
@@ -72,7 +71,7 @@ class KrakenL3(BaseKrakenWS):
                         self.ticks.append(info)
                         self.tick_count += 1
                 if len(asks) == 0 and len(bids) == 0:
-                    print(response)
+                    pass
 
 
         elif 'data' in response.keys() and response['type'] == 'snapshot':
@@ -108,9 +107,8 @@ class KrakenL2(BaseKrakenWS):
     """
 
     def __init__(self, symbols, api_key=None, secret_key=None,trace=False,
-                 depth = 10,
-                 out_file_name="output.csv", log_every=20,
-                 log_bbo_every=100):
+                 depth = 10, output_dir=".", log_every=100,
+                 log_bbo_every=200):
 
         assert depth in [10, 25, 100, 500, 1000] , "Depths allowed: 10, 25, 100, 500, 1000"
 
@@ -125,12 +123,12 @@ class KrakenL2(BaseKrakenWS):
         self.api_secret = secret_key
         self.log_every = log_every
         self.log_bbo_every = log_bbo_every
-        self.out_file_name = out_file_name
         self.ask_prices = [0.0]*self.depth
         self.bid_prices = [0.0]*self.depth
         self.ask_volumes = np.zeros(self.depth)
         self.bid_volumes = np.zeros(self.depth)
         self.count = 0
+        self.output_dir = output_dir
 
 
     def _on_message(self, ws, message):
@@ -278,7 +276,7 @@ class KrakenL2(BaseKrakenWS):
                     full_L2_orderbook = {'b': self.bids,
                                          'a': self.asks}
 
-                    with open("L2_orderbook.json", "w") as fil:
+                    with open(f"{self.output_dir}/L2_orderbook.json", "w") as fil:
                         json.dump(full_L2_orderbook, fil)
                 else:
                     output = False
@@ -286,7 +284,7 @@ class KrakenL2(BaseKrakenWS):
                 if self.count % self.log_bbo_every == 0:
                     print("here")
                     if not os.path.exists("L1_BBO.csv"):
-                        with open("L1_BBO.csv", "w") as fil:
+                        with open(f"{self.output_dir}/L1_BBO.csv", "w") as fil:
                             fil.write("timestamp,bbo,bao\n")
                     else:
                         with open("L1_BBO.csv", "a") as fil:
@@ -296,10 +294,10 @@ class KrakenL2(BaseKrakenWS):
                             fil.write(f"{now},{BBO},{BAO}\n")
 
                 if output:
-                    print("\n")
-                    print("ASK INFO")
-                    print(self.ask_prices)
-                    print(self.asks)
+                    print("Best Bid \t\t Best Ask \t\t Spread")
+                    BBO = np.max(self.bid_prices)
+                    BAO = np.min(self.ask_prices)
+                    print(f"{BBO}\t\t{BAO}\t\t{BAO-BBO}")
 
                         
 
@@ -312,13 +310,6 @@ class KrakenL2(BaseKrakenWS):
         ask_keys = list(self.asks.keys())
         bid_vals = list(self.bids.values())
         ask_vals = list(self.asks.values())
-
-        # print("Bids")
-        # print(bid_keys)
-        # print(bid_vals)
-        # print("Asks")
-        # print(ask_keys)
-        # print(ask_vals)
 
         asksum = ""
         bidsum = ""
@@ -365,22 +356,128 @@ class KrakenL2(BaseKrakenWS):
         ws.send(json.dumps(subscription)) 
 
 
-with open(f"/home/alg/.api.toml", "r") as fil:
-    data = toml.load(fil)
-api_key = data['kraken_api']
-api_secret = data['kraken_sec']
+class KrakenOHLC(BaseKrakenWS):
+    """
+    Class extending BaseKrakenWS geared towards L3 feeds from the Kraken v2 API.
+    """
+
+    def __init__(self, symbols, api_key=None, secret_key=None,trace=False,
+                 interval=5, output_directory="."):
 
 
-# l3feed = KrakenL3("BTC/USD",
-#                   trace=False, 
-#                   api_key=api_key,
-#                   secret_key=api_secret)
-os.system("rm L1_BBO.csv")
-l2feed = KrakenL2("BTC/USD",
-                  trace=False, 
-                  api_key=api_key,
-                  secret_key=api_secret)
+        all_int = [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]
+
+        assert interval in all_int , f"Choose interval from {all_int}"
+
+        self.tick_count = 0
+        if type(symbols) == str:
+            symbols = [symbols]
+
+        self.symbols = symbols
+        self.auth = False
+        self.trace = trace
+        self.api_key = api_key
+        self.api_secret = secret_key
+        self.ticks = []
+        self.interval = interval
+        self.output_directory = output_directory
+
+    def _on_message(self, ws, message):
+        response = json.loads(message)
+
+        reponse_keys = list(response.keys())
+
+        if 'channel' in reponse_keys:
+
+            # Main case for handling the OHLC data from Kraken
+            if response['channel'] == 'ohlc':
 
 
-# l3feed.launch()
-l2feed.launch()
+#┆  96 {'channel': 'ohlc', 'type': 'update', 'timestamp': '2024-10-11T01:20:09.952961122Z',
+# 'data': [{'symbol      ': 'DOGE/USD', 'open': 0.1058763, 'high': 0.1058763, 'low': 0.1058763,
+# 'close': 0.1058763, 'trades': 1      , 'volume': 266.663, 'vwap': 0.1058763,
+#'interval_begin': '2024-10-11T01:20:00.000000000Z', 'interval'      : 1,
+# 'timestamp': '2024-10-11T01:21:00.000000Z'}]}   
+
+                if response['type'] == 'update':
+                    data = response['data']
+                    assert len(data) == 1, "Data longer than expected"
+                    data = data[0]
+
+                    print("prior to extracting data")
+                    symbol = data['symbol']
+                    open_p = data['open']
+                    high = data['high']
+                    low = data['low']
+                    close = data['close']
+                    trades = data['trades']
+                    volume = data['volume']
+                    vwap = data['vwap']
+                    tend = data['timestamp']
+                    tstart = data['interval_begin']
+                    ttrue = response['timestamp']
+
+                    info = [tend, symbol, str(open_p), str(high), str(low),
+                            str(close), str(volume), str(vwap), str(trades), tstart, ttrue]
+
+
+                    if not os.path.exists(f'{self.output_directory}/ohlc.csv'):
+                        with open(f'{self.output_directory}/ohlc.csv', 'a') as fil:
+                            fil.write("tend,open,high,low,close,volume,vwap,trades,tstart,ttrue\n")
+
+                    with open(f'{self.output_directory}/ohlc.csv', 'a') as fil:
+                        fil.write(",".join(info)+"\n")
+
+
+                elif response['type'] == 'snapshot':
+                    data = response['data']
+                    assert len(data) > 1, "Data shorter than expected"
+                    ...
+                
+            elif response['channel'] in ['heartbeat', 'status', 'subscribe']:
+                ...
+        print(response)
+
+    def _on_open(self, ws):
+        """
+        Open message for Kraken L3 connection.
+        """
+
+        print("Kraken v2 Connection Opened.")
+        ws_token = self.get_ws_token(self.api_key, self.api_secret)
+        
+        subscription = {
+            "method": "subscribe",
+            "params": {
+                "channel": "ohlc",
+                "symbol": self.symbols,
+                # "token": ws_token
+                "interval":self.interval,
+            }
+        }
+
+        ws.send(json.dumps(subscription)) 
+
+
+
+if __name__ == "__main__":
+    with open(f"/home/alg/.api.toml", "r") as fil:
+        data = toml.load(fil)
+    api_key = data['kraken_api']
+    api_secret = data['kraken_sec']
+
+
+    # l2feed = KrakenL2("DOGE/USD",
+                    # trace=False, 
+                    # api_key=api_key,
+                    # secret_key=api_secret)
+    # l2feed.launch()
+    # l3feed.launch()
+
+    ohlcfeed = KrakenOHLC("DOGE/USD",
+                          interval=1,
+                          trace=False,
+                          api_key=api_key,
+                          secret_key=api_secret)
+
+    ohlcfeed.launch()
