@@ -10,6 +10,7 @@ class BaseKrakenWS:
         self.secret_key = secret_key
 
     def launch(self):
+
         """
         Starts the websocket thread. For the BaseKrakenWS, this simply opens 
         an authenticated (e.g. you need to provide API/Secret) L3 data stream
