@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 import numpy as np
 import json
 BG_COL='#f0f0f0'
+# BG_COL='#898db3'
 # BG_COL='gray'
 # Initialize the Dash app
 app = dash.Dash(__name__)
@@ -64,7 +65,9 @@ def update_graphs(n):
                             subplot_titles=("BBO Data", ""))
 
         # Add traces for BBO
-        figure1.add_trace(go.Scatter(x=df['timestamp'], y=df['bbo'], mode='lines+markers', name='BBO'),
+        figure1.add_trace(go.Scatter(x=df['timestamp'], y=df['bbo'], mode='lines+markers',
+                                     marker_color='blue', name='BBO',
+                                     ),
                            row=1, col=1
         )
 
@@ -137,9 +140,9 @@ def update_graphs(n):
             y=top_indices,
             # x=filled_lengths[:10],
             orientation='h',
-            marker=dict(color='green'),
+            marker=dict(color='green', line=dict(color='black', width=1.5)),
             hoverinfo='text',
-            text=[f'Price: {price}, Volume: {volume}' for price, volume in zip(stock_prices[:10], stock_volumes[:10])],
+            text=[f'V: {volume}' for price, volume in zip(stock_prices[:10], stock_volumes[:10])],
         ))
 
         # Add horizontal bars for the bottom 10 (red)
@@ -147,14 +150,18 @@ def update_graphs(n):
             y=bottom_indices,
             x=filled_lengths[10:],
             orientation='h',
-            marker=dict(color='red'),
+            marker=dict(color='red', line=dict(color='black', width=1.5)),
             hoverinfo='text',
-            text=[f'Price: {price}, Volume: {volume}' for price, volume in zip(stock_prices[10:], stock_volumes[10:])],
+            text=[f'V: {volume}' for price, volume in zip(stock_prices[10:], stock_volumes[10:])],
         ))
 
         # Update layout to label y-axis with stock prices
         figure3.update_layout(
-            title='Stock Prices vs Volume',
+            title='L2',
+            shapes=[dict( type="rect", xref="paper", yref="paper",
+                    x0=0, y0=0, x1=1, y1=1,
+                    line=dict(color="black", width=1)
+                    )],
             xaxis=dict(title='Volume (scaled)'),
             yaxis=dict(
                 title='Stock Prices',
