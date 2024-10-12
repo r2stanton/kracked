@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 import numpy as np
 import json
 BG_COL='#f0f0f0'
+BG_COL='#5273a8'
 # BG_COL='#898db3'
 # BG_COL='gray'
 # Initialize the Dash app
@@ -36,10 +37,10 @@ app.layout = html.Div(style={
 def update_graphs(n):
     try:
         # Read data from CSV file
-        df = pd.read_csv('../kracked/L1_BBO.csv')
+        df = pd.read_csv('data/L1_BBO.csv')
 
 
-        with open("../kracked/L2_orderbook.json", 'r') as f:
+        with open("data/L2_orderbook.json", 'r') as f:
             data_unp = json.load(f)
         data = {}
         for dk in data_unp['b'].keys():
@@ -108,15 +109,55 @@ def update_graphs(n):
 
         # Create second figure (Plot 2)
         figure2 = go.Figure()
-        figure2.add_trace(go.Bar(x=df['timestamp'],
-                                 y=df['bao'],
-                                 marker=dict(line=dict(color='black', width=3))))
 
-        figure2.update_layout(title='Plot 2: Bar Graph',
-                              xaxis_title='Time',
-                              paper_bgcolor=BG_COL,
-                              plot_bgcolor=BG_COL,
-                              yaxis_title='Value')
+        # Read OHLCV data from CSV
+        df_ohlc = pd.read_csv('data/ohlc.csv')
+        df_ohlc['tend'] = pd.to_datetime(df_ohlc['tend'])
+
+        # Create subplots: 2 rows, 1 column, shared x-axis
+        figure2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.7, 0.3])
+
+        # Create OHLC candlestick trace
+        candlestick = go.Candlestick(
+            x=df_ohlc['tend'],
+            open=df_ohlc['open'],
+            high=df_ohlc['high'],
+            low=df_ohlc['low'],
+            close=df_ohlc['close'],
+            name='OHLC'
+        )
+        figure2.add_trace(candlestick, row=1, col=1)
+
+        # Add volume bars
+        colors = ['green' if close >= open else 'red' for open, close in zip(df_ohlc['open'], df_ohlc['close'])]
+        volume = go.Bar(
+            x=df_ohlc['tend'],
+            y=df_ohlc['volume'],
+            name='Volume',
+            marker_color=colors
+        )
+        figure2.add_trace(volume, row=2, col=1)
+
+        # Update layout
+        figure2.update_layout(
+            title='OHLCV Chart',
+            yaxis_title='Price',
+            yaxis2_title='Volume',
+            paper_bgcolor=BG_COL,
+            plot_bgcolor=BG_COL,
+            xaxis_rangeslider_visible=False,
+            showlegend=False
+        )
+
+        # Update y-axes
+        figure2.update_yaxes(title_text="Price", row=1, col=1)
+        figure2.update_yaxes(title_text="Volume", row=2, col=1)
+
+        # Update x-axis
+        figure2.update_xaxes(title_text="Time", row=2, col=1)
+
+        # Enable live updates
+        figure2.update_layout(uirevision='constant')
 
         # Create third figure (Plot 3)
         figure3 = go.Figure()
@@ -138,7 +179,7 @@ def update_graphs(n):
 
         figure3.add_trace(go.Bar(
             y=top_indices,
-            # x=filled_lengths[:10],
+            x=np.log10(filled_lengths[:10]/np.min(filled_lengths[:10])),
             orientation='h',
             marker=dict(color='green', line=dict(color='black', width=1.5)),
             hoverinfo='text',
@@ -148,12 +189,13 @@ def update_graphs(n):
         # Add horizontal bars for the bottom 10 (red)
         figure3.add_trace(go.Bar(
             y=bottom_indices,
-            x=filled_lengths[10:],
+            x=np.log10(filled_lengths[10:]/np.min(filled_lengths[10:])),
             orientation='h',
             marker=dict(color='red', line=dict(color='black', width=1.5)),
             hoverinfo='text',
             text=[f'V: {volume}' for price, volume in zip(stock_prices[10:], stock_volumes[10:])],
         ))
+
 
         # Update layout to label y-axis with stock prices
         figure3.update_layout(
