@@ -422,7 +422,6 @@ class KrakenOHLC(BaseKrakenWS):
                     assert len(data) == 1, "Data longer than expected"
                     data = data[0]
 
-                    print("prior to extracting data")
                     symbol = data["symbol"]
                     open_p = data["open"]
                     high = data["high"]
@@ -459,13 +458,52 @@ class KrakenOHLC(BaseKrakenWS):
                         fil.write(",".join(info) + "\n")
 
                 elif response["type"] == "snapshot":
-                    data = response["data"]
-                    assert len(data) > 1, "Data shorter than expected"
-                    ...
+                    full_data = response["data"]
+                    assert len(full_data) > 1, "Data shorter than expected"
+
+                    info_lines = []
+                    for data in full_data:
+                        symbol = data["symbol"]
+                        open_p = data["open"]
+                        high = data["high"]
+                        low = data["low"]
+                        close = data["close"]
+                        trades = data["trades"]
+                        volume = data["volume"]
+                        vwap = data["vwap"]
+                        tend = data["timestamp"]
+                        tstart = data["interval_begin"]
+                        ttrue = response["timestamp"]
+
+                        info = [
+                            tend,
+                            symbol,
+                            str(open_p),
+                            str(high),
+                            str(low),
+                            str(close),
+                            str(volume),
+                            str(vwap),
+                            str(trades),
+                            tstart,
+                            ttrue,
+                        ]
+
+                        info_lines.append(info)
+
+
+                    for info in info_lines:
+                        if not os.path.exists(f"{self.output_directory}/ohlc.csv"):
+                            with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
+                                fil.write(
+                                    "tend,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                )
+
+                        with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
+                            fil.write(",".join(info) + "\n")
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
-                ...
-        print(response)
+                pass
 
     def _on_open(self, ws):
         """
