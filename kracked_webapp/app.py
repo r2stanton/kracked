@@ -7,7 +7,7 @@ from plotly.subplots import make_subplots
 import numpy as np
 import json
 BG_COL='#f0f0f0'
-BG_COL='#5273a8'
+# BG_COL='#5273a8'
 # BG_COL='#898db3'
 # BG_COL='gray'
 # Initialize the Dash app
@@ -24,7 +24,7 @@ app.layout = html.Div(style={
 }, children=[
     dcc.Graph(id='live-update-graph-1'),  # Plot 1 in (1, 1)
     dcc.Graph(id='live-update-graph-2'),  # Plot 2 in (2, 1)
-    dcc.Graph(id='live-update-graph-3', style={'gridColumn': '2', 'gridRow': '1 / span 2'})  # Plot 3 spans both rows in column 2
+    dcc.Graph(id='live-update-graph-3', style={'gridColumn': '2', 'gridRow': '1 / span 4', 'height': '100%'})  # Plot 3 spans both rows in column 2 and full height
 ])
 
 # Callback to update all graphs
@@ -197,7 +197,7 @@ def update_graphs(n):
         ))
 
 
-        # Update layout to label y-axis with stock prices
+        # Update layout for figure3
         figure3.update_layout(
             title='L2',
             shapes=[dict( type="rect", xref="paper", yref="paper",
@@ -211,7 +211,7 @@ def update_graphs(n):
                 ticktext=stock_prices,
             ),
             showlegend=False,
-            height=500,
+            height=1000,  # Increase the height to ensure it takes full vertical space
             paper_bgcolor=BG_COL,
             plot_bgcolor=BG_COL,
         )
@@ -232,4 +232,3 @@ app.layout.children.append(dcc.Interval(
 # Run the app
 if __name__ == '__main__':
     app.run_server(debug=True)
-
