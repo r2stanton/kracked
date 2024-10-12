@@ -305,11 +305,11 @@ class KrakenL2(BaseKrakenWS):
 
                 if self.count % self.log_bbo_every == 0:
                     print("here")
-                    if not os.path.exists("L1_BBO.csv"):
+                    if not os.path.exists(f"{self.output_dir}/L1_BBO.csv"):
                         with open(f"{self.output_dir}/L1_BBO.csv", "w") as fil:
                             fil.write("timestamp,bbo,bao\n")
                     else:
-                        with open("L1_BBO.csv", "a") as fil:
+                        with open(f"{self.output_dir}/L1_BBO.csv", "a") as fil:
                             now = datetime.datetime.now()
                             BBO = np.max(self.bid_prices)
                             BAO = np.min(self.ask_prices)
@@ -494,13 +494,13 @@ class KrakenOHLC(BaseKrakenWS):
 
                     for info in info_lines:
                         if not os.path.exists(f"{self.output_directory}/ohlc.csv"):
-                            with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
+                            with open(f"{self.output_directory}/ohlc.csv", "w") as fil:
                                 fil.write(
-                                    "tend,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                    "tend,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
                                 )
-
-                        with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
-                            fil.write(",".join(info) + "\n")
+                        else:
+                            with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
+                                fil.write(",".join(info) + "\n")
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
                 pass
@@ -526,21 +526,96 @@ class KrakenOHLC(BaseKrakenWS):
         ws.send(json.dumps(subscription))
 
 
+class KrakenTrades(BaseKrakenWS):
+    def __init__(self, symbols, api_key=None, secret_key=None, trace=False,
+    write_every=100, output_directory="."):
+        if type(symbols) == str:
+            symbols = [symbols]
+
+        self.symbols = symbols
+        self.auth = False
+        self.trace = trace
+        self.api_key = api_key
+        self.api_secret = secret_key
+        self.write_every = write_every
+        self.output_directory = output_directory
+        self.all_trades = []
+
+    def _on_message(self, ws, message):
+
+        response = json.loads(message)
+
+        reponse_keys = list(response.keys())
+
+        if "channel" in reponse_keys:
+            if response["channel"] == "trade":
+                if response["type"] in ["update", "snapshot"]:
+                    filled_trades = response['data']
+                    for trade in filled_trades:
+                        ts_event = trade['timestamp']
+                        symbol = trade['symbol']
+                        price = str(trade['price'])
+                        qty = str(trade['qty'])
+                        side = trade['side']
+                        ord_type = trade['ord_type']
+                        trade_id = str(trade['trade_id'])
+                        self.all_trades.append([ts_event, symbol, price, qty, side, ord_type, trade_id])
+
+                elif response["type"] == "snapshot":
+                    pass
+            elif response["channel"] in ["heartbeat", "status", "subscribe"]:
+                pass
+
+        if len(self.all_trades) >= self.write_every:
+
+            if not os.path.exists(f"{self.output_directory}/trades.csv"):
+                with open(f"{self.output_directory}/trades.csv", "w") as fil:
+                    fil.write("ts_event,symbol,price,qty,side,ord_type,trade_id\n")
+
+            with open(f"{self.output_directory}/trades.csv", "a") as fil:
+                for trade in self.all_trades:
+                    fil.write(",".join(trade) + "\n")
+
+            self.all_trades = []
+
+
+    def _on_open(self, ws):
+
+        print("Kraken v2 Connection Opened.")
+        ws_token = self.get_ws_token(self.api_key, self.api_secret)
+
+        subscription = {
+        "method": "subscribe",
+        "params": {
+            "channel": "trade",
+            "symbol": self.symbols,
+            "snapshot": True
+        }
+        }
+
+        ws.send(json.dumps(subscription))
+
+
+class KrakenPlaceholder(BaseKrakenWS):
+    def __init__(self, symbols, api_key=None, secret_key=None, trace=False):
+        ...
+
+    def _on_message(self, ws, message):
+        ...
+
+    def _on_open(self, ws):
+        ...
+    
+
+
 if __name__ == "__main__":
     with open(f"/home/alg/.api.toml", "r") as fil:
         data = toml.load(fil)
     api_key = data["kraken_api"]
     api_secret = data["kraken_sec"]
 
-    # l2feed = KrakenL2("DOGE/USD",
-    # trace=False,
-    # api_key=api_key,
-    # secret_key=api_secret)
-    # l2feed.launch()
-    # l3feed.launch()
-
-    ohlcfeed = KrakenOHLC(
-        "DOGE/USD", interval=1, trace=False, api_key=api_key, secret_key=api_secret
-    )
-
-    ohlcfeed.launch()
+    os.system("rm data/trades.csv")
+    # ohlcfeed = KrakenOHLC( "DOGE/USD", interval=1, trace=False, api_key=api_key, secret_key=api_secret)
+    tradefeed = KrakenTrades("BTC/USD", trace=False, api_key=api_key, secret_key=api_secret, write_every=1,
+    output_directory="data")
+    tradefeed.launch()
