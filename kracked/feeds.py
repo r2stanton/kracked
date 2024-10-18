@@ -149,8 +149,8 @@ class KrakenL2(BaseKrakenWS):
         response = json.loads(message)
         self.count += 1
 
+        # Pass all method messages.
         if "method" in response.keys():
-            # Pass these.
             pass
 
         if "channel" in response.keys():
@@ -632,10 +632,28 @@ class KrakenOHLC(BaseKrakenWS):
 
 
 class KrakenTrades(BaseKrakenWS):
+    """
+    Websocket for the Trade endpoint from the Kraken v2 API.
 
+    This channel generates a trade event whenever there is an order matched in the book.
+    """
 
     def __init__(self, symbols, api_key=None, secret_key=None, trace=False,
     write_every=100, output_directory="."):
+    """
+
+    Constructor for the KrakenTrades endpoint.
+
+    Parameters:
+    -----------
+        symbols List[str] or str:
+        api_key: str
+        secret_key: str
+        trace: bool
+        write_every: int
+        output_directory: str
+    """
+
         if type(symbols) == str:
             symbols = [symbols]
 
