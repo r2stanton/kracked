@@ -623,7 +623,6 @@ class KrakenOHLC(BaseKrakenWS):
             "params": {
                 "channel": "ohlc",
                 "symbol": self.symbols,
-                # "token": ws_token
                 "interval": self.interval,
             },
         }
@@ -640,19 +639,19 @@ class KrakenTrades(BaseKrakenWS):
 
     def __init__(self, symbols, api_key=None, secret_key=None, trace=False,
     write_every=100, output_directory="."):
-    """
+        """
 
-    Constructor for the KrakenTrades endpoint.
+        Constructor for the KrakenTrades endpoint.
 
-    Parameters:
-    -----------
-        symbols List[str] or str:
-        api_key: str
-        secret_key: str
-        trace: bool
-        write_every: int
-        output_directory: str
-    """
+        Parameters:
+        -----------
+            symbols List[str] or str:
+            api_key: str
+            secret_key: str
+            trace: bool
+            write_every: int
+            output_directory: str
+        """
 
         if type(symbols) == str:
             symbols = [symbols]
@@ -799,6 +798,7 @@ class KrakenInstruments(BaseKrakenWS):
             }
 
         ws.send(json.dumps(subscription))
+
 
 class KrakenPlaceholder(BaseKrakenWS):
     def __init__(self, symbols, api_key=None, secret_key=None, trace=False):

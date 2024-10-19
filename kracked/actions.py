@@ -16,6 +16,8 @@ class KrakenExecutions(BaseKrakenWS):
         self.api_secret = secret_key
         self.session_id = session_id
 
+        self.balances = {}
+
         self.action_number = 0
 
         self.order_info = {'order_id': [],
@@ -34,6 +36,8 @@ class KrakenExecutions(BaseKrakenWS):
         self.ws = ws
         self.connected.set()
 
+        self.get_balances()
+
     def _on_message(self, ws, message):
         # Needs to be implemented
         response = json.loads(message)
@@ -41,6 +45,12 @@ class KrakenExecutions(BaseKrakenWS):
         if "channel" in response.keys():
             if response["channel"] == "status":
                 ...
+            elif response["channel"] == "balances":
+                data = response["data"]
+                for d in data:
+                    info_dict = {'asset_class':d['asset_class'], 'balance':d['balance'], 'wallets': d['wallets']}
+                    self.balances[d['asset']] = info_dict
+                    print("Here")
         else:
             if response["method"] == "add_order":
                 order_id = response["result"]["order_id"]
@@ -61,7 +71,6 @@ class KrakenExecutions(BaseKrakenWS):
                     fil.write(",".join([str(self.order_info[key][self.action_number]) for key in self.order_info.keys()]) + "\n")
 
                 self.action_number += 1
-        ...
 
     def _on_error(self, ws, error):
         # print(error)
@@ -157,68 +166,69 @@ class KrakenExecutions(BaseKrakenWS):
                   sender_sub_id=None,
                   req_id=None,
     ):
-    """
-    Function for creating orders in the Kraken Exchange. Not all parameters are
-    required for all order types. Be sure you understand the necessary requirements
-    for each order type that you seek to trade. Parameter names are all the same as 
-    those defined in the Kraken API. See https://docs.kraken.com/api/docs/websocket-v2/add_order
-    for more information.
+        """
+        Function for creating orders in the Kraken Exchange. Not all parameters are
+        required for all order types. Be sure you understand the necessary requirements
+        for each order type that you seek to trade. Parameter names are all the same as 
+        those defined in the Kraken API. See https://docs.kraken.com/api/docs/websocket-v2/add_order
+        for more information.
 
-    Parameters:
-    -----------
-    order_type: str
-        The type of order to be created. Must be one of the following:
-            "market", "limit",
-            "stop-loss", "stop-loss-limit",
-            "take-profit", "take-profit-limit",
-            "trailing-stop", "trailing-stop-limit",
-             "iceberg".
+        Parameters:
+        -----------
+        order_type: str
+            The type of order to be created. Must be one of the following:
+                "market", "limit",
+                "stop-loss", "stop-loss-limit",
+                "take-profit", "take-profit-limit",
+                "trailing-stop", "trailing-stop-limit",
+                "iceberg".
 
-    side: str
-        The side of the order.
-    order_qty: float
-        The quantity of the order.
-    symbol: str
-        The symbol for the order.
-    limit_price: float
-        The price of the order.
-    time_in_force: str
-        The time in force of the order. Must be one of the following:
-            "gtc" -> Good Till Cancelled.
-            "gtd" -> Good Till Date. See expire_time parameter.
-            "ioc" -> Immediate or Cancel. Cancels any unfilled portion of the order
-                     upon receipt and implementation by the exchange.
-    trigger_params: dict
-        The parameters for the trigger of the applicable order types:
-        stop-loss orders, take-profit orders, and  trailing-stop orders.
+        side: str
+            The side of the order.
+        order_qty: float
+            The quantity of the order.
+        symbol: str
+            The symbol for the order.
+        limit_price: float
+            The price of the order.
+        time_in_force: str
+            The time in force of the order. Must be one of the following:
+                "gtc" -> Good Till Cancelled.
+                "gtd" -> Good Till Date. See expire_time parameter.
+                "ioc" -> Immediate or Cancel. Cancels any unfilled portion of the order
+                        upon receipt and implementation by the exchange.
+        trigger_params: dict
+            The parameters for the trigger of the applicable order types:
+            stop-loss orders, take-profit orders, and  trailing-stop orders.
 
-        Relevant parameters include:
-            "reference" -> The reference price for the trigger, "last" or index". Default is "last".
-            "price" -> The price at which the trigger should fire.
-            "price_type" -> Type of price definition.
-                "static" -> The price is fixed.
-                "pct" -> Percentage offset from the index.
-                "quote" -> Notional offset from reference price in quote currency. E.g.
-                           some fixed number of dollars from the last price.
-    margin: bool
-        Whether the order is a margin order.
-    post_only: bool
-        Whether the order is a post only order.
-    reduce_only: bool
-        Whether the order is a reduce only order.
-    effective_time: str
-        The effective time of the order.
-    expire_time: str
-        The expire time of the order.
-    deadline: str
-        The deadline of the order.
-    cl_ord_id: str
-        The client order id of the order.
-    order_userref: str
-        The user reference of the order.
+            Relevant parameters include:
+                "reference" -> The reference price for the trigger, "last" or index". Default is "last".
+                "price" -> The price at which the trigger should fire.
+                "price_type" -> Type of price definition.
+                    "static" -> The price is fixed.
+                    "pct" -> Percentage offset from the index.
+                    "quote" -> Notional offset from reference price in quote currency. E.g.
+                            some fixed number of dollars from the last price.
 
-        
-    """
+        margin: bool
+            Whether the order is a margin order.
+        post_only: bool
+            Whether the order is a post only order.
+        reduce_only: bool
+            Whether the order is a reduce only order.
+        effective_time: str
+            The effective time of the order.
+        expire_time: str
+            The expire time of the order.
+        deadline: str
+            The deadline of the order.
+        cl_ord_id: str
+            The client order id of the order.
+        order_userref: str
+            The user reference of the order.
+
+            
+        """
 
         if fee_preference is not None and side is not None:
             if side == "buy":
@@ -284,6 +294,17 @@ class KrakenExecutions(BaseKrakenWS):
         self.order_info['local_time'].append(formatted_time)
         self.ws.send(json.dumps(message))
 
+    def get_balances(self):
+        message = {
+            "method": "subscribe",
+            "params": {
+                "channel": "balances",
+            }
+        }
+        message["params"]["token"] = self.get_ws_token(self.api_key, self.api_secret)
+
+        self.ws.send(json.dumps(message))
+
 if __name__ == "__main__":
     with open("/home/alg/.api.toml", "r") as fil:
         data = toml.load(fil)
@@ -300,30 +321,37 @@ if __name__ == "__main__":
 
     print("WebSocket connection established successfully.")
 
-    exec.add_order(
-        order_type="limit",
-        side="buy",
-        order_qty=100.0,
-        symbol="DOGE/USD",
-        limit_price=.09,
-        time_in_force="gtc"
-    )
+    test_orders = False
+    check_balances = True
 
-    exec.add_order(
-        order_type="limit",
-        side="buy",
-        order_qty=100.0,
-        symbol="DOGE/USD",
-        limit_price=.089,
-        time_in_force="gtc"
-    )
 
-    #wait 3 seconds
+
+    if test_orders:
+        exec.add_order(
+            order_type="limit",
+            side="buy",
+            order_qty=100.0,
+            symbol="DOGE/USD",
+            limit_price=.09,
+            time_in_force="gtc"
+        )
+
+        exec.add_order(
+            order_type="limit",
+            side="buy",
+            order_qty=100.0,
+            symbol="DOGE/USD",
+            limit_price=.089,
+            time_in_force="gtc"
+        )
+
+        #wait 3 seconds
+        time.sleep(3)
+
+        exec.cancel_order("all")
+
     time.sleep(3)
-
-    exec.cancel_order("all")
-
-    # exec.cancel_order("OLY33L-XGWUU-QCCQ3M")
+    print(exec.balances)
 
     try:
         while True:
