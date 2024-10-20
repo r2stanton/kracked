@@ -411,10 +411,14 @@ class KrakenL3(BaseKrakenWS):
     def _on_message(self, ws, message):
         response = json.loads(message)
         if len(self.ticks) > self.log_ticks_every:
-            with open(f"{self.output_directory}/{self.out_file_name}", "a+") as fil:
-                for tick in self.ticks:
-                    tick = [str(t) for t in tick]
-                    fil.write(",".join(tick) + "\n")
+            if not os.path.exists(f"{self.output_directory}/{self.out_file_name}"):
+                with open(f"{self.output_directory}/{self.out_file_name}", "w") as fil:
+                    fil.write("side,timestamp,price,size,event,order_id\n")
+            else:
+                with open(f"{self.output_directory}/{self.out_file_name}", "a") as fil:
+                    for tick in self.ticks:
+                        tick = [str(t) for t in tick]
+                        fil.write(",".join(tick) + "\n")
             self.ticks = []
             self.tick_count = 0
 
@@ -504,7 +508,10 @@ class KrakenOHLC(BaseKrakenWS):
         self.ticks = []
         self.interval = interval
         self.output_directory = output_directory
+
+
     def _on_message(self, ws, message):
+        print(message)
         response = json.loads(message)
 
         reponse_keys = list(response.keys())
@@ -668,6 +675,7 @@ class KrakenTrades(BaseKrakenWS):
         reponse_keys = list(response.keys())
 
         if "channel" in reponse_keys:
+            print("New ping from Kraken")
             if response["channel"] == "trade":
                 if response["type"] in ["update", "snapshot"]:
                     filled_trades = response['data']

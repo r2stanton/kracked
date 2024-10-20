@@ -19,3 +19,14 @@ Efficiency-first framework for pulling, storing, and aggregating Kraken data usi
 ```
 
 
+
+To-Do
+-----
+
+All Market Feeds Working:
+L1, L2, L3
+Bars (OHLCV)
+Trade
+Instruments*
+
+Mult-threaded Feed Manager
