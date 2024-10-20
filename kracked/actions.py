@@ -257,6 +257,7 @@ class KrakenExecutions(BaseKrakenWS):
                     "symbol": symbol,
                     "limit_price": limit_price,
                     "time_in_force": time_in_force,
+                    "validate": validate,
                 }
             }
         elif order_type == "stop-loss":
@@ -270,6 +271,7 @@ class KrakenExecutions(BaseKrakenWS):
                     "limit_price": limit_price,
                     "time_in_force": time_in_force,
                     "triggers": trigger_params
+                    "validate": validate,
                 }
             }
         elif order_type == "stop-loss-limit":

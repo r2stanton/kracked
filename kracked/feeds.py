@@ -4,6 +4,7 @@ import numpy as np
 import toml, json, os
 import datetime
 
+
 class KrakenL1(BaseKrakenWS):
     """
     Class extending BaseKrakenWS geared towards L3 feeds from the Kraken v2 API.
@@ -508,10 +509,7 @@ class KrakenOHLC(BaseKrakenWS):
         self.ticks = []
         self.interval = interval
         self.output_directory = output_directory
-
-
     def _on_message(self, ws, message):
-        print(message)
         response = json.loads(message)
 
         reponse_keys = list(response.keys())
@@ -791,18 +789,6 @@ class KrakenInstruments(BaseKrakenWS):
             }
 
         ws.send(json.dumps(subscription))
-
-
-class KrakenPlaceholder(BaseKrakenWS):
-    def __init__(self, symbols, api_key=None, secret_key=None, trace=False):
-        ...
-
-    def _on_message(self, ws, message):
-        ...
-
-    def _on_open(self, ws):
-        ...
-    
 
 
 if __name__ == "__main__":
