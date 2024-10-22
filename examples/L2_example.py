@@ -22,8 +22,8 @@ l2feed = KrakenL2("BTC/USD",
                   secret_key=api_secret,
                   trace=False,
                   depth=10,
-                  output_dir="data",
-                  log_every=100,
+                  output_directory="data",
+                  log_book_every=100,
                   log_bbo_every=10,
                   )
 

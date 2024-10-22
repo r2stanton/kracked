@@ -1,5 +1,6 @@
 import websocket, json, threading, hashlib, toml
 import urllib.parse, hmac, base64, time, requests
+import asyncio
 
 
 class BaseKrakenWS:
@@ -165,6 +166,8 @@ class BaseKrakenWS:
             on_close=self._on_close,
         )
 
+        print("websocket info from core.run_websocket")
+        print(ws)
         ws.run_forever()
 
 
