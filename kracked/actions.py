@@ -1,6 +1,7 @@
 import json, logging, threading, time, toml
 from kracked.core import BaseKrakenWS
 from datetime import datetime, timezone
+import ccxt
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,11 +35,13 @@ class KrakenExecutions(BaseKrakenWS):
     def _on_open(self, ws):
         print("Kraken v2 Connection Opened.")
         self.ws = ws
+        print("webscoket info within KrakenExecutions._on_open")
+        print(self.ws)
         self.connected.set()
-
         self.get_balances()
 
     def _on_message(self, ws, message):
+        print(message)
         # Needs to be implemented
         response = json.loads(message)
         # print(response)
@@ -50,7 +53,6 @@ class KrakenExecutions(BaseKrakenWS):
                 for d in data:
                     info_dict = {'asset_class':d['asset_class'], 'balance':d['balance'], 'wallets': d['wallets']}
                     self.balances[d['asset']] = info_dict
-                    print("Here")
         else:
             if response["method"] == "add_order":
                 order_id = response["result"]["order_id"]
@@ -73,10 +75,11 @@ class KrakenExecutions(BaseKrakenWS):
                 self.action_number += 1
 
     def _on_error(self, ws, error):
-        # print(error)
+        print(error)
         self.connected.clear()
 
     def _on_close(self, ws, close_status_code, close_msg):
+        print(close_msg)
         print(f"WebSocket closed. Status code: {close_status_code}, Message: {close_msg}")
         self.connected.clear()
 
@@ -270,7 +273,7 @@ class KrakenExecutions(BaseKrakenWS):
                     "symbol": symbol,
                     "limit_price": limit_price,
                     "time_in_force": time_in_force,
-                    "triggers": trigger_params
+                    "triggers": trigger_params,
                     "validate": validate,
                 }
             }
@@ -307,6 +310,104 @@ class KrakenExecutions(BaseKrakenWS):
 
         self.ws.send(json.dumps(message))
 
+class KrakenPortfolio:
+    def __init__(self, kraken_ccxt):
+        self.kraken_ccxt = kraken_ccxt
+
+        self.log_open_orders()
+
+    def log_open_orders(self, static_exchange=None):
+        
+        all_open_orders = self.kraken_ccxt.fetch_open_orders()
+        relevant_order_info = []
+        unique_symbols = []
+
+        for ord in all_open_orders:
+            oid = ord['id']
+            oinfo = ord['info']
+            
+            symbol = ord['symbol']
+            if symbol not in unique_symbols:
+                unique_symbols.append(symbol)
+
+            status = ord['status']
+            open_time = ord['timestamp']
+            price = ord['price']
+            qty = ord['amount']
+            qty_exec = ord['filled']
+            side = ord['side']
+
+            relevant_order_info.append({'id': oid,
+                                        'symbol': symbol,
+                                        'status': status,
+                                        'open_time': open_time,
+                                        'price': price,
+                                        'qty': qty,
+                                        'qty_exec': qty_exec,
+                                        'side': side})
+
+
+        self.open_orders = {s:[] for s in unique_symbols}
+
+        for o in relevant_order_info:
+            self.open_orders[o['symbol']].append(o)
+
+        
+def add_order(kraken_ccxt, order_type, symbol, side, amount, price, 
+              validate=False, time_in_force='gtc', displayvol=None,
+              ):
+
+    try:
+        result = kraken_ccxt.create_order(symbol,
+                                        order_type,
+                                        side,
+                                        amount,
+                                        price,
+                                        params={"validate": validate,
+                                                "time_in_force": time_in_force})
+        print(f"Order placed successfully: {result}")
+    except ccxt.NetworkError as e:
+        print(f"Network error occurred: {e}")
+        return {}
+    except ccxt.ExchangeError as e:
+        print(f"Exchange error occurred: {e}")
+        return {}
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return {}
+
+    return result
+
+def cancel_order(kraken_ccxt, order_id):
+
+    try:
+        response = kraken_ccxt.cancel_order(order_id)
+    except ccxt.NetworkError as e:
+        print(f"Network error occurred: {e}")
+        return {}
+    except ccxt.ExchangeError as e:
+        print(f"Exchange error occurred: {e}")
+        return {}
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+    return response
+
+def cancel_all_by_symbol(kraken_ccxt, symbol, open_orders=None):
+
+    if open_orders is None:
+        kp = KrakenPortfolio(kraken_ccxt)
+        open_orders = kp.open_orders
+
+    if symbol not in open_orders.keys():
+        print(f"No open orders for {symbol}")
+        return None
+
+    open_orders_for_symbol = open_orders[symbol]
+    # print(open_orders_for_symbol)
+
+    for o in open_orders_for_symbol:
+        cancel_order(kraken_ccxt, o['id'])
+
 if __name__ == "__main__":
     with open("/home/alg/.api.toml", "r") as fil:
         data = toml.load(fil)
@@ -317,47 +418,27 @@ if __name__ == "__main__":
 
     exec.start_websocket()
 
+    # Wait for the WebSocket to connect
     if not exec.connected.wait(timeout=30):
         print("Failed to establish WebSocket connection.")
         exit(1)
 
     print("WebSocket connection established successfully.")
 
-    test_orders = False
-    check_balances = True
+    # Now it's safe to add an order
+    exec.add_order(
+        order_type="limit",
+        symbol="BTC/USD",
+        side="buy",
+        order_qty=0.001,
+        limit_price=66000,
+        time_in_force='gtc'
+    )
 
-
-
-    if test_orders:
-        exec.add_order(
-            order_type="limit",
-            side="buy",
-            order_qty=100.0,
-            symbol="DOGE/USD",
-            limit_price=.09,
-            time_in_force="gtc"
-        )
-
-        exec.add_order(
-            order_type="limit",
-            side="buy",
-            order_qty=100.0,
-            symbol="DOGE/USD",
-            limit_price=.089,
-            time_in_force="gtc"
-        )
-
-        #wait 3 seconds
-        time.sleep(3)
-
-        exec.cancel_order("all")
-
-    time.sleep(3)
-    print(exec.balances)
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Interrupted by user. Closing WebSocket...")
-        exec.stop_websocket()
+    # try:
+    #     # Keep the main thread running
+    #     while True:
+    #         time.sleep(1)
+    # except KeyboardInterrupt:
+    #     print("Interrupted by user. Closing WebSocket...")
+    #     exec.stop_websocket()
