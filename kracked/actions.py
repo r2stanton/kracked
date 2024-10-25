@@ -313,10 +313,29 @@ class KrakenExecutions(BaseKrakenWS):
 class KrakenPortfolio:
     def __init__(self, kraken_ccxt):
         self.kraken_ccxt = kraken_ccxt
+        
+        # After these functions:
 
-        self.log_open_orders()
+        # self.open_orders is set.
+        self.get_open_orders()
 
-    def log_open_orders(self, static_exchange=None):
+        # self.balances is set.
+        self.get_balances()
+
+    def get_balances(self):
+
+        total_bals = self.kraken_ccxt.fetch_balance()['total']
+
+        self.balances = total_bals
+
+        # symbols = list(total_bals.keys())
+        # balances = {s:total_bals[s] for s in symbols}
+
+
+
+
+
+    def get_open_orders(self, static_exchange=None):
         
         all_open_orders = self.kraken_ccxt.fetch_open_orders()
         relevant_order_info = []
@@ -351,6 +370,8 @@ class KrakenPortfolio:
 
         for o in relevant_order_info:
             self.open_orders[o['symbol']].append(o)
+
+
 
         
 def add_order(kraken_ccxt, order_type, symbol, side, amount, price, 
