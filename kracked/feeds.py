@@ -129,6 +129,7 @@ class KrakenL2(BaseKrakenWS):
         output_directory=".",
         depth=10,
         log_book_every=100,
+        append_book=False,
         log_bbo_every=200,
     ):
 
@@ -153,6 +154,7 @@ class KrakenL2(BaseKrakenWS):
         self.bid_prices = [0.0] * self.depth
         self.ask_volumes = np.zeros(self.depth)
         self.bid_volumes = np.zeros(self.depth)
+        self.append_book = append_book
         self.count = 0
         self.output_directory = output_directory
 
@@ -181,6 +183,7 @@ class KrakenL2(BaseKrakenWS):
 
                 # Bids -> Asserts snapshot fills the orderbook (w.r.t self.depth)
                 bids = data["bids"]
+                print(len(bids), self.depth)
                 assert len(bids) == self.depth, "Snapshot should be full book refresh."
 
                 # Asks -> Asserts snapshot fills the orderbook (w.r.t self.depth)
@@ -204,6 +207,9 @@ class KrakenL2(BaseKrakenWS):
                 # print(len(list(self.asks.keys())))
 
             else:
+                # FIXME need to deal with the separate time stamps in the case of very 
+                # high frequency strategies where the small intervals between one ping from 
+                # the websocket may make a difference.
                 self.count += 1
 
                 data = response["data"]
@@ -264,6 +270,7 @@ class KrakenL2(BaseKrakenWS):
                                 self.bid_prices.remove(bp)
                                 del self.bids[bp]
                         else:
+                            # FIXME handle this case more gracefully at some point.
                             ws.close()
                             raise ValueError(f"MBP Depth is lower than {self.depth}")
 
@@ -304,8 +311,42 @@ class KrakenL2(BaseKrakenWS):
                     output = True
                     full_L2_orderbook = {"b": self.bids, "a": self.asks}
 
-                    with open(f"{self.output_directory}/L2_orderbook.json", "w") as fil:
-                        json.dump(full_L2_orderbook, fil)
+                    if self.append_book:
+                        aps = list(full_L2_orderbook["a"].keys())
+                        avs = list(full_L2_orderbook["a"].values())
+                        bps = list(full_L2_orderbook["b"].keys())
+                        bvs = list(full_L2_orderbook["b"].values())
+
+                        aps = [str(ap) for ap in aps]
+                        avs = [str(av) for av in avs]
+                        bps = [str(bp) for bp in bps]
+                        bvs = [str(bv) for bv in bvs]
+
+                        most_recent_timestamp = len(data) - 1
+                        line = [str(data[most_recent_timestamp]['timestamp']), *aps, *avs, *bps, *bvs] 
+
+                        if not os.path.exists(f"{self.output_directory}/L2_orderbook.csv"):
+                            with open(f"{self.output_directory}/L2_orderbook.csv", "w") as fil:
+                                apls = []
+                                avls = []
+                                bpls = []
+                                bvls = []
+                                for i in range(self.depth):
+                                    apls.append("ap" + str(i))
+                                    avls.append("av" + str(i))
+                                    bpls.append("bp" + str(i))
+                                    bvls.append("bv" + str(i))
+                                labels = ["timestamp", *apls, *avls, *bpls, *bvls] 
+                                fil.write(",".join(labels) + "\n")
+                                fil.write(",".join(line) + "\n")
+                        else:
+                            with open(f"{self.output_directory}/L2_orderbook.csv", "a") as fil:
+                                fil.write(",".join(line) + "\n")
+
+                    else:
+
+                        with open(f"{self.output_directory}/L2_orderbook.json", "w") as fil:
+                            json.dump(full_L2_orderbook, fil)
                 else:
                     output = False
 
@@ -369,9 +410,11 @@ class KrakenL2(BaseKrakenWS):
 
         subscription = {
             "method": "subscribe",
-            "params": {"channel": "book", "symbol": self.symbols,
-            # "token": ws_token
-            },
+            "params": {
+                       "channel": "book",
+                       "symbol": self.symbols,
+                       "depth": self.depth,
+                       },
         }
 
         ws.send(json.dumps(subscription))
