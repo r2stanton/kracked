@@ -15,7 +15,7 @@ api_secret = data['kraken_sec']
 
 if not os.path.exists("data/"):
     os.system("mkdir data")
-l3feed = KrakenL3("BTC/USD",
+l3feed = KrakenL3(["DOGE/USD", "BTC/USD", "ETH/USD", "SOL/USD"],
                   api_key=api_key,
                   secret_key=api_secret,
                   trace=False,
