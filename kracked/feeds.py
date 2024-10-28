@@ -457,7 +457,7 @@ class KrakenL3(BaseKrakenWS):
         if len(self.ticks) > self.log_ticks_every:
             if not os.path.exists(f"{self.output_directory}/{self.out_file_name}"):
                 with open(f"{self.output_directory}/{self.out_file_name}", "w") as fil:
-                    fil.write("side,timestamp,price,size,event,order_id\n")
+                    fil.write("side,timestamp,price,size,event,order_id,symbol\n")
             else:
                 with open(f"{self.output_directory}/{self.out_file_name}", "a") as fil:
                     for tick in self.ticks:
@@ -475,6 +475,7 @@ class KrakenL3(BaseKrakenWS):
             ):
                 bids = response["data"][0]["bids"]
                 asks = response["data"][0]["asks"]
+                symbol = response["data"][0]["symbol"]
                 if len(bids) > 0:
                     for bid in bids:
                         info = [
@@ -484,6 +485,7 @@ class KrakenL3(BaseKrakenWS):
                             bid["order_qty"],  # Size
                             bid["event"],  # Event
                             bid["order_id"],  # OID
+                            symbol
                         ]
                         self.ticks.append(info)
                         self.tick_count += 1
@@ -496,6 +498,7 @@ class KrakenL3(BaseKrakenWS):
                             ask["order_qty"],  # Size
                             ask["event"],  # Event
                             ask["order_id"],  # OID
+                            symbol
                         ]
                         self.ticks.append(info)
                         self.tick_count += 1

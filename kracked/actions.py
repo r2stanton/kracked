@@ -65,9 +65,6 @@ class KrakenPortfolio:
 
         for o in relevant_order_info:
             self.open_orders[o['symbol']].append(o)
-
-
-
         
 def add_order(kraken_ccxt, order_type, symbol, side, amount, 
               price=None, validate=False, time_in_force='gtc', displayvol=None,
