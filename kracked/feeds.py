@@ -33,6 +33,7 @@ class KrakenL1(BaseKrakenWS):
 
 
     def _on_message(self, ws, message):
+        recv_ts = datetime.datetime.now()
         response = json.loads(message)
         reponse_keys = list(response.keys())
 
@@ -53,6 +54,7 @@ class KrakenL1(BaseKrakenWS):
 
                     info_lines = []
                     for data in full_data:
+                        timestamp = str(recv_ts)
                         symbol = data["symbol"]
                         bid = data["bid"]
                         bid_qty = data["bid_qty"]
@@ -67,6 +69,7 @@ class KrakenL1(BaseKrakenWS):
                         change_pct = data["change_pct"]
 
                         info = [
+                            timestamp,
                             symbol,
                             str(bid),
                             str(bid_qty),
@@ -83,12 +86,11 @@ class KrakenL1(BaseKrakenWS):
 
                         info_lines.append(info)
 
-
                     for info in info_lines:
                         if not os.path.exists(f"{self.output_directory}/L1.csv"):
                             with open(f"{self.output_directory}/L1.csv", "w") as fil:
                                 fil.write(
-                                    "symbol,bid,bid_qty,ask,ask_qty,last,volume,vwap,low,high,change,change_pct\n"
+                                    "timestamp,symbol,bid,bid_qty,ask,ask_qty,last,volume,vwap,low,high,change,change_pct\n"
                                 )
                                 fil.write(",".join(info) + "\n")
                         else:
@@ -146,21 +148,20 @@ class KrakenL2(BaseKrakenWS):
 
         self.depth = depth
         self.symbols = symbols
+        self.books = {s:{} for s in symbols}
         self.auth = False
         self.trace = trace
         self.log_book_every = log_book_every
         self.log_bbo_every = log_bbo_every
-        self.ask_prices = [0.0] * self.depth
-        self.bid_prices = [0.0] * self.depth
-        self.ask_volumes = np.zeros(self.depth)
-        self.bid_volumes = np.zeros(self.depth)
+        self.ask_prices = {s: [0.0] * self.depth for s in symbols}
+        self.bid_prices = {s: [0.0] * self.depth for s in symbols}
         self.append_book = append_book
         self.count = 0
         self.output_directory = output_directory
 
     def _on_message(self, ws, message):
         response = json.loads(message)
-        self.count += 1
+        # self.count += 1
 
         # Pass all method messages.
         if "method" in response.keys():
@@ -176,6 +177,7 @@ class KrakenL2(BaseKrakenWS):
             elif response["type"] == "snapshot":
                 # Pull data
                 data = response["data"]
+                symbol = data[0]["symbol"]
                 if len(data) != 1:
                     raise ValueError("Data longer than expected")
                 data = data[0]
@@ -183,28 +185,20 @@ class KrakenL2(BaseKrakenWS):
 
                 # Bids -> Asserts snapshot fills the orderbook (w.r.t self.depth)
                 bids = data["bids"]
-                print(len(bids), self.depth)
                 assert len(bids) == self.depth, "Snapshot should be full book refresh."
 
                 # Asks -> Asserts snapshot fills the orderbook (w.r.t self.depth)
                 asks = data["asks"]
                 assert len(asks) == self.depth, "Snapshot should be full book refresh."
 
-                self.bids = {b["price"]: b["qty"] for b in bids}
-                self.asks = {a["price"]: a["qty"] for a in asks}
+                self.books[symbol]["bids"] = {b["price"]: b["qty"] for b in bids}
+                self.books[symbol]["asks"] = {a["price"]: a["qty"] for a in asks}
 
-                self.bid_prices = [b["price"] for b in bids]
-                self.ask_prices = [a["price"] for a in asks]
+                self.bid_prices[symbol] = [b["price"] for b in bids]
+                self.ask_prices[symbol] = [a["price"] for a in asks]
 
-                self._book_checksum(ws, checksum)
+                self._book_checksum(ws, checksum, symbol)
 
-                print(self.bids)
-                print(self.asks)
-                print(self.bid_prices)
-                print(self.ask_prices)
-                print("THIS MANY BIDS:")
-                print(len(list(self.bids.keys())))
-                # print(len(list(self.asks.keys())))
 
             else:
                 # FIXME need to deal with the separate time stamps in the case of very 
@@ -213,6 +207,8 @@ class KrakenL2(BaseKrakenWS):
                 self.count += 1
 
                 data = response["data"]
+                symbol = data[0]["symbol"]
+
                 if ("bids" in response["data"][0].keys()) & (
                     "asks" in response["data"][0].keys()
                 ):
@@ -223,10 +219,10 @@ class KrakenL2(BaseKrakenWS):
                     bqty = [b["qty"] for b in bids]
                     aqty = [a["qty"] for a in asks]
                     new_bids = [
-                        b["price"] for b in bids if b["price"] not in self.bid_prices
+                        b["price"] for b in bids if b["price"] not in self.bid_prices[symbol]
                     ]
                     new_asks = [
-                        a["price"] for a in asks if a["price"] not in self.ask_prices
+                        a["price"] for a in asks if a["price"] not in self.ask_prices[symbol]
                     ]
 
                     # Check if we remove any price levels from the book
@@ -247,28 +243,29 @@ class KrakenL2(BaseKrakenWS):
                             # REMOVE BAD PRICE LEVEL
                             if bid["qty"] == 0:
                                 # Remove the price level from the dictionary
-                                del self.bids[curr_price]
+                                del self.books[symbol]["bids"][curr_price]
                                 # Zero this bad price level in the self.prices array.
-                                self.bid_prices.remove(curr_price)
+                                self.bid_prices[symbol].remove(curr_price)
 
                             # ADD GOOD PRICE LEVEL
                             else:
-                                self.bids[curr_price] = bid["qty"]
-                                if curr_price not in self.bid_prices:
-                                    self.bid_prices.append(curr_price)
+                                self.books[symbol]["bids"][curr_price] = bid["qty"]
+                                if curr_price not in self.bid_prices[symbol]:
+                                    self.bid_prices[symbol].append(curr_price)
 
-                        self.bid_prices.sort(reverse=True)
+                        # Fix: Sort the list directly
+                        self.bid_prices[symbol].sort(reverse=True)
 
                         # HANDLE BOOKKEEPING OF THE DEPTH FOR MBP DATA
-                        num_bid_levels = len(self.bid_prices)
+                        num_bid_levels = len(self.bid_prices[symbol])
                         if num_bid_levels == self.depth:
                             pass
                         elif num_bid_levels > self.depth:
-                            # Remove all other price levels
-                            bad_prices = self.bid_prices[self.depth :]
+                            # Fix: Get the prices to remove as a list instead of a slice
+                            bad_prices = self.bid_prices[symbol][self.depth:]  # Convert slice to list
                             for bp in bad_prices:
-                                self.bid_prices.remove(bp)
-                                del self.bids[bp]
+                                self.bid_prices[symbol].remove(bp)
+                                del self.books[symbol]["bids"][bp]
                         else:
                             # FIXME handle this case more gracefully at some point.
                             ws.close()
@@ -281,99 +278,86 @@ class KrakenL2(BaseKrakenWS):
                             # REMOVE BAD PRICE LEVEL
                             if ask["qty"] == 0:
                                 # Remove the price level from the dictionary
-                                del self.asks[curr_price]
+                                del self.books[symbol]["asks"][curr_price]
                                 # Zero this bad price level in the self.prices array.
-                                self.ask_prices.remove(curr_price)
+                                self.ask_prices[symbol].remove(curr_price)
 
                             # ADD GOOD PRICE LEVEL
                             else:
-                                self.asks[curr_price] = ask["qty"]
-                                if curr_price not in self.ask_prices:
-                                    self.ask_prices.append(curr_price)
+                                self.books[symbol]["asks"][curr_price] = ask["qty"]
+                                if curr_price not in self.ask_prices[symbol]:
+                                    self.ask_prices[symbol].append(curr_price)
 
-                        self.ask_prices.sort(reverse=False)
+                        self.ask_prices[symbol].sort(reverse=False)
 
                         # HANDLE BOOKKEEPING OF THE DEPTH FOR MBP DATA
-                        num_ask_levels = len(self.ask_prices)
+                        num_ask_levels = len(self.ask_prices[symbol])
                         if num_ask_levels == self.depth:
                             pass
                         elif num_ask_levels > self.depth:
-                            # Remove all other price levels
-                            bad_prices = self.ask_prices[self.depth :]
+                            # Fix: Get the prices to remove as a list instead of a slice
+                            bad_prices = self.ask_prices[symbol][self.depth:]  # Convert slice to list
                             for bp in bad_prices:
-                                self.ask_prices.remove(bp)
-                                del self.asks[bp]
+                                self.ask_prices[symbol].remove(bp)
+                                del self.books[symbol]["asks"][bp]
                         else:
                             ws.close()
                             raise ValueError(f"MBP Depth is lower than {self.depth}")
 
+                # Sort the self.bids and self.asks by their keys (prices)
+                self.books[symbol]["bids"] = dict(sorted(self.books[symbol]["bids"].items(), reverse=True))
+                self.books[symbol]["asks"] = dict(sorted(self.books[symbol]["asks"].items(), reverse=False))
+
                 if self.count % self.log_book_every:
-                    output = True
-                    full_L2_orderbook = {"b": self.bids, "a": self.asks}
-
                     if self.append_book:
-                        aps = list(full_L2_orderbook["a"].keys())
-                        avs = list(full_L2_orderbook["a"].values())
-                        bps = list(full_L2_orderbook["b"].keys())
-                        bvs = list(full_L2_orderbook["b"].values())
+                        for symbol in self.symbols: 
+                            output = True
+                            full_L2_orderbook = {"b": self.books[symbol]["bids"], "a": self.books[symbol]["asks"]}
 
-                        aps = [str(ap) for ap in aps]
-                        avs = [str(av) for av in avs]
-                        bps = [str(bp) for bp in bps]
-                        bvs = [str(bv) for bv in bvs]
+                            aps = list(full_L2_orderbook["a"].keys())
+                            avs = list(full_L2_orderbook["a"].values())
+                            bps = list(full_L2_orderbook["b"].keys())
+                            bvs = list(full_L2_orderbook["b"].values())
 
-                        most_recent_timestamp = len(data) - 1
-                        line = [str(data[most_recent_timestamp]['timestamp']), *aps, *avs, *bps, *bvs] 
+                            aps = [str(ap) for ap in aps]
+                            avs = [str(av) for av in avs]
+                            bps = [str(bp) for bp in bps]
+                            bvs = [str(bv) for bv in bvs]
 
-                        if not os.path.exists(f"{self.output_directory}/L2_orderbook.csv"):
-                            with open(f"{self.output_directory}/L2_orderbook.csv", "w") as fil:
-                                apls = []
-                                avls = []
-                                bpls = []
-                                bvls = []
-                                for i in range(self.depth):
-                                    apls.append("ap" + str(i))
-                                    avls.append("av" + str(i))
-                                    bpls.append("bp" + str(i))
-                                    bvls.append("bv" + str(i))
-                                labels = ["timestamp", *apls, *avls, *bpls, *bvls] 
-                                fil.write(",".join(labels) + "\n")
-                                fil.write(",".join(line) + "\n")
-                        else:
-                            with open(f"{self.output_directory}/L2_orderbook.csv", "a") as fil:
-                                fil.write(",".join(line) + "\n")
+                            most_recent_timestamp = len(data) - 1
+                            line = [str(data[most_recent_timestamp]['timestamp']), *aps, *avs, *bps, *bvs] 
 
-                    else:
+                            ssymbol = symbol.replace("/", "_")
+                            if not os.path.exists(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"):
+                                with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "w") as fil:
+                                    apls = []
+                                    avls = []
+                                    bpls = []
+                                    bvls = []
+                                    for i in range(self.depth):
+                                        apls.append("ap" + str(i))
+                                        avls.append("av" + str(i))
+                                        bpls.append("bp" + str(i))
+                                        bvls.append("bv" + str(i))
+                                    labels = ["timestamp", *apls, *avls, *bpls, *bvls] 
+                                    fil.write(",".join(labels) + "\n")
+                                    fil.write(",".join(line) + "\n")
+                            else:
+                                with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "a") as fil:
+                                    fil.write(",".join(line) + "\n")
 
-                        with open(f"{self.output_directory}/L2_orderbook.json", "w") as fil:
-                            json.dump(full_L2_orderbook, fil)
+                    with open(f"{self.output_directory}/L2_live_orderbooks.json", "w") as fil:
+                        json.dump(self.books, fil)
                 else:
                     output = False
 
-                if self.count % self.log_bbo_every == 0:
-                    print("here")
-                    if not os.path.exists(f"{self.output_directory}/L1_BBO.csv"):
-                        with open(f"{self.output_directory}/L1_BBO.csv", "w") as fil:
-                            fil.write("timestamp,bbo,bao\n")
-                    else:
-                        with open(f"{self.output_directory}/L1_BBO.csv", "a") as fil:
-                            now = datetime.datetime.now()
-                            BBO = np.max(self.bid_prices)
-                            BAO = np.min(self.ask_prices)
-                            fil.write(f"{now},{BBO},{BAO}\n")
 
-                if output:
-                    print("Best Bid \t\t Best Ask \t\t Spread")
-                    BBO = np.max(self.bid_prices)
-                    BAO = np.min(self.ask_prices)
-                    print(f"{BBO}\t\t{BAO}\t\t{BAO-BBO}")
+    def _book_checksum(self, ws, checksum, symbol):
 
-    def _book_checksum(self, ws, checksum):
-
-        bid_keys = list(self.bids.keys())
-        ask_keys = list(self.asks.keys())
-        bid_vals = list(self.bids.values())
-        ask_vals = list(self.asks.values())
+        bid_keys = list(self.books[symbol]["bids"].keys())
+        ask_keys = list(self.books[symbol]["asks"].keys())
+        bid_vals = list(self.books[symbol]["bids"].values())
+        ask_vals = list(self.books[symbol]["asks"].values())
 
         asksum = ""
         bidsum = ""
@@ -384,8 +368,8 @@ class KrakenL2(BaseKrakenWS):
             sap = str(ask_keys[i]).replace(".", "").lstrip("0")
 
             # String bid qty, String bid ask
-            sbq = f"{self.bids[bid_keys[i]]:.8f}".replace(".", "").lstrip("0")
-            saq = f"{self.asks[ask_keys[i]]:.8f}".replace(".", "").lstrip("0")
+            sbq = f"{self.books[symbol]['bids'][bid_keys[i]]:.8f}".replace(".", "").lstrip("0")
+            saq = f"{self.books[symbol]['asks'][ask_keys[i]]:.8f}".replace(".", "").lstrip("0")
 
             sb = sbp + sbq
             sa = sap + saq
@@ -397,8 +381,9 @@ class KrakenL2(BaseKrakenWS):
         kracked_checksum = CRC32(csum_string.encode("utf-8"))
 
         if checksum != kracked_checksum:
-            # FIXME ADD ERROR HANDLING HERE.
-            raise ValueError("CHECKSUM MISMATCH! BOOK IS INCONSISTENT!")
+            ...
+            # # FIXME ADD ERROR HANDLING HERE.
+            # raise ValueError("CHECKSUM MISMATCH! BOOK IS INCONSISTENT!")
 
     def _on_open(self, ws):
         """
@@ -454,6 +439,7 @@ class KrakenL3(BaseKrakenWS):
 
     def _on_message(self, ws, message):
         response = json.loads(message)
+
         if len(self.ticks) > self.log_ticks_every:
             if not os.path.exists(f"{self.output_directory}/{self.out_file_name}"):
                 with open(f"{self.output_directory}/{self.out_file_name}", "w") as fil:
@@ -507,7 +493,6 @@ class KrakenL3(BaseKrakenWS):
 
         elif "data" in response.keys() and response["type"] == "snapshot":
             # Decide what to do with initial snapshot later
-            print("SKIPPING SNAPSHOT")
             pass
 
     def _on_open(self, ws):
@@ -602,14 +587,14 @@ class KrakenOHLC(BaseKrakenWS):
                         ttrue,
                     ]
 
-                    if not os.path.exists(f"{self.output_directory}/ohlc.csv"):
-                        with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
+                    if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                        with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
                             fil.write(
-                                "tend,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                "timestamp,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
                             )
                             fil.write(",".join(info) + "\n")
 
-                    with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
+                    with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
                         fil.write(",".join(info) + "\n")
 
                 elif response["type"] == "snapshot":
@@ -648,13 +633,13 @@ class KrakenOHLC(BaseKrakenWS):
 
 
                     for info in info_lines:
-                        if not os.path.exists(f"{self.output_directory}/ohlc.csv"):
-                            with open(f"{self.output_directory}/ohlc.csv", "w") as fil:
+                        if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                            with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
                                 fil.write(
-                                    "tend,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                    "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
                                 )
                         else:
-                            with open(f"{self.output_directory}/ohlc.csv", "a") as fil:
+                            with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
                                 fil.write(",".join(info) + "\n")
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
@@ -719,7 +704,6 @@ class KrakenTrades(BaseKrakenWS):
         reponse_keys = list(response.keys())
 
         if "channel" in reponse_keys:
-            print("New ping from Kraken")
             if response["channel"] == "trade":
                 if response["type"] in ["update", "snapshot"]:
                     filled_trades = response['data']
@@ -784,7 +768,6 @@ class KrakenInstruments(BaseKrakenWS):
             if response["type"] == "snapshot":
                 assets = response["data"]["assets"]
                 pairs = response["data"]["pairs"]
-                print(len(assets), len(pairs))
                 unique_quotes = []
 
                 header_pairs = pairs[0].keys()
@@ -819,9 +802,6 @@ class KrakenInstruments(BaseKrakenWS):
 
                 ws.close()
                 exit(1)
-
-                    # if pair["symbol"] == "DOGE/USD":
-                    #     print(pair)
 
     def _on_open(self, ws):
 

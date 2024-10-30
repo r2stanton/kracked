@@ -166,8 +166,6 @@ class BaseKrakenWS:
             on_close=self._on_close,
         )
 
-        print("websocket info from core.run_websocket")
-        print(ws)
         ws.run_forever()
 
 
