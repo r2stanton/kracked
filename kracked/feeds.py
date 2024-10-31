@@ -131,7 +131,7 @@ class KrakenL2(BaseKrakenWS):
         output_directory=".",
         depth=10,
         log_book_every=100,
-        append_book=False,
+        append_book=True,
         log_bbo_every=200,
     ):
 
@@ -407,7 +407,21 @@ class KrakenL2(BaseKrakenWS):
 
 class KrakenL3(BaseKrakenWS):
     """
-    Class extending BaseKrakenWS geared towards L3 feeds from the Kraken v2 API.
+    Class extending BaseKrakenWS for the L3 feed from the Kraken v2 API.
+
+    In brief, the class stores L3 data in memory until the threshold determined by
+    log_ticks_every is reached. At this point, the data is written to a file in the
+    output_directory with the name specified by out_file_name. All symbols are logged
+    in the same file. One may wish to periodically convert the L3 data into aggregates,
+    or migrate to a more suitable file format (e.g. parquet, HDf5, etc.)
+
+    IMPORTANT NOTE: This is the only Kraken feed that requires authentication. You MUST provide
+    an api_key and secret_key.
+
+    Implements:
+    -----------
+    _on_open
+    _on_message
     """
 
     def __init__(
@@ -418,9 +432,32 @@ class KrakenL3(BaseKrakenWS):
         trace=False,
         out_file_name="L3_ticks.csv",
         log_ticks_every=100,
-        log_for_webapp=False,
-        output_directory=".",
-    ):
+        log_for_webapp=False,   # FIXME does nothing
+        output_directory="."):
+        """
+        Constructor for the KrakenL3 class.
+
+        Parameters:
+        -----------
+            symbols: List[str] or str
+                The symbols to subscribe to.
+            api_key: str
+                The user API key for the Kraken API.
+            secret_key: str
+                The user secret key for the Kraken API.
+            trace: bool
+                Whether to trace the websocket messages. Note these heavily clog the stdout.
+            out_file_name: str
+                The name of the file to log the L3 data to. All symbols are logged to 
+                the same file.
+            log_ticks_every: int
+                The number of incoming ticks before they are batch written to the desired
+                output file.
+            log_for_webapp: bool
+                Whether to log information for the webapp. [Likely to be deprecated.]
+            output_directory: str
+                The directory to log the L3 data to.
+        """
 
         self.tick_count = 0
         if type(symbols) == str:
@@ -513,7 +550,33 @@ class KrakenL3(BaseKrakenWS):
 
 class KrakenOHLC(BaseKrakenWS):
     """
-    Class extending BaseKrakenWS geared towards L3 feeds from the Kraken v2 API.
+    Class extending BaseKrakenWS for the time-aggregated OHLC data from the Kraken v2 API.
+
+    In brief, the class stores OHLC data and writes it to a file in the output_directory
+    with the name OHLC.csv. All symbols are logged in the same file. Acceptable intervals are
+    [1, 5, 15, 30, 60, 240, 1440, 10080, 21600] with units of minutes.
+
+    IMPORTANT NOTE: This feed receives messages FAR more frequently than the required resolution
+    of the bars. A concise way of dealing with this is to first load your data:
+
+    df = pd.read_csv("OHLC.csv")
+
+    Then, one should select for their desired symbol:
+
+    df_symbol = df[df["symbol"] == "DOGE/USD"]
+
+    Finally, one must aggregate only the FINAL row corresponding to a specific timestamp.
+
+    df_symbol = df_symbol.groupby("timestamp").last().reset_index()
+
+    Failure to do this will result in nonsense OHLC data. The benefit of including these in the output
+    are that live plotting methods can allow for real-time (insofar as the API allows) candlestick updates
+    for the current bar.
+
+    Implements:
+    -----------
+    _on_message
+    _on_open
     """
 
     def __init__(

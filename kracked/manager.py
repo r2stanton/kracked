@@ -1,6 +1,5 @@
 
 from kracked.feeds import KrakenL1, KrakenL2, KrakenL3, KrakenOHLC, KrakenTrades, KrakenInstruments
-from kracked.actions import KrakenExecutions
 import threading, queue, toml, time
 
 class KrakenFeedManager:
@@ -8,7 +7,6 @@ class KrakenFeedManager:
                  L1=False, L2=False, L3=False, ohlc=False, trades=False, instruments=False,
                  L1_params={}, L2_params={}, L3_params={}, ohlc_params={}, trades_params={}, instruments_params={}
                  ):
-        print("In Constructor")
         self.api_key = api_key
         self.api_secret = api_secret
         self.symbols = symbols
@@ -29,6 +27,7 @@ class KrakenFeedManager:
             print("KrakenFeedManager: Initializing L2 feed")
             log_book_every = L2_params.get("log_book_every", 100)
             log_bbo_every = L2_params.get("log_bbo_every", 200)
+            append_book = L2_params.get("append_book", True)
             depth = L2_params.get("depth", 10)
 
 
@@ -38,6 +37,7 @@ class KrakenFeedManager:
                                depth=depth,
                                log_book_every=log_book_every,
                                log_bbo_every=log_bbo_every,
+                               append_book=append_book,
                             )
             self.feeds.append(self.L2)
         if L3:
@@ -97,6 +97,7 @@ class KrakenFeedManager:
         print("Started message processing thread.")
 
     def process_messages(self):
+        print('processMessagesCalled')
         while True:
             message = self.message_queue.get()
             if message is None:
@@ -112,10 +113,9 @@ class KrakenFeedManager:
 
     def stop_all(self):
         # Implement stopping logic for all WebSockets
-        self.executions.stop_websocket()
-        self.trades.stop_websocket()
-        self.ohlc.stop_websocket()
-        self.l2.stop_websocket()
+        for feed in self.feeds:
+            feed.stop_websocket()
+
 
         # Stop processing thread
         self.message_queue.put(None)
