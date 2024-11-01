@@ -15,6 +15,7 @@ api_secret = data["kraken_sec"]
 file_line = 1
 num_buys = 0
 num_sells = 0
+
 while num_buys < 100:
     print("NEW CHECK")
     print("NUM BUYS:", num_buys)

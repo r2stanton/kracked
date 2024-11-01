@@ -1,4 +1,5 @@
 from kracked.manager import KrakenFeedManager
+import threading
 import toml, time
 
 # Load/type directly as arguments to the KrakenL3 constructor your API info.
@@ -8,7 +9,7 @@ api_key = data['kraken_api']
 api_secret = data['kraken_sec']
 
 
-feeds = KrakenFeedManager(["DOGE/USD", "BTC/USD", "SOL/USD"],
+all_feeds = KrakenFeedManager(["DOGE/USD", "BTC/USD", "SOL/USD"],
                           api_key, 
                           api_secret,
                           L1=True,
@@ -19,26 +20,35 @@ feeds = KrakenFeedManager(["DOGE/USD", "BTC/USD", "SOL/USD"],
                           output_directory="ex_multifeed_out",
 
                           L2_params={'log_book_every':50,},
-                          L3_params={'log_ticks_every':100},
+                          L3_params={'log_ticks_every':1500},
                           ohlc_params={'interval':5},
                           trades_params={'log_trades_every':50}
                           )
 
 
 
-feeds.start_all()
+all_feeds.start_all()
 
 ct = 0
 try:
     while True:
         ct += 1
         time.sleep(1)
-        if ct % 50 == 0:
-            # Loop through the feeds and ping Kraken
-            ...
 
+        for name, thread in zip(all_feeds.threads.keys(),
+                                all_feeds.threads.values()):
+
+            if not thread.is_alive():
+                print(f"{name} Thread died, trying to restart")
+                curr_feed = all_feeds.feeds[name]
+                restarted_thread = threading.Thread(target=curr_feed.launch)
+                restarted_thread.daemon = True
+                restarted_thread.start()
+                all_feeds.threads[name] = restarted_thread
+
+                del thread
 
 except KeyboardInterrupt:
     print("Shutting down feeds...")
-    feeds.stop_all()
+    all_feeds.stop_all()
 
