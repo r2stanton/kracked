@@ -582,28 +582,51 @@ class KrakenOHLC(BaseKrakenWS):
     def __init__(
         self,
         symbols,
-        api_key=None,
-        secret_key=None,
         trace=False,
         interval=5,
         output_directory=".",
     ):
+        """
+        Constructor for the KrakenOHLC class.
+
+        Parameters:
+        -----------
+            symbols: List[str] or str
+                The symbols to subscribe to.
+            trace: bool
+                Whether to trace the websocket messages.
+            interval: int
+                The interval for the OHLC data in minutes. Acceptable values are
+                [1, 5, 15, 30, 60, 240, 1440, 10080, 21600].
+            output_directory: str
+                The directory to log the OHLC data to.
+        """
 
         all_int = [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]
 
+        # Ensure an acceptable interval is provided.
         assert interval in all_int, f"Choose interval from {all_int}"
 
+        # Initialize the tick counter and symbols.
         self.tick_count = 0
         if type(symbols) == str:
             symbols = [symbols]
 
+        # Initialize the symbols, authentication, tracing, and OHLC data storage.
         self.symbols = symbols
         self.auth = False
         self.trace = trace
         self.ticks = []
         self.interval = interval
         self.output_directory = output_directory
+
+
     def _on_message(self, ws, message):
+        """
+        Message handler for the OHLC feed.
+
+
+        """
         response = json.loads(message)
 
         reponse_keys = list(response.keys())
@@ -612,13 +635,7 @@ class KrakenOHLC(BaseKrakenWS):
 
             # Main case for handling the OHLC data from Kraken
             if response["channel"] == "ohlc":
-
-                # ┆  96 {'channel': 'ohlc', 'type': 'update', 'timestamp': '2024-10-11T01:20:09.952961122Z',
-                # 'data': [{'symbol      ': 'DOGE/USD', 'open': 0.1058763, 'high': 0.1058763, 'low': 0.1058763,
-                # 'close': 0.1058763, 'trades': 1      , 'volume': 266.663, 'vwap': 0.1058763,
-                #'interval_begin': '2024-10-11T01:20:00.000000000Z', 'interval'      : 1,
-                # 'timestamp': '2024-10-11T01:21:00.000000Z'}]}
-
+                
                 if response["type"] == "update":
                     data = response["data"]
                     assert len(data) == 1, "Data longer than expected"
