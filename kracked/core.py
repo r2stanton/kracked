@@ -10,6 +10,7 @@ class BaseKrakenWS:
         self.trace = trace
         self.api_key = api_key
         self.secret_key = secret_key
+        self.ws = None
 
     def launch(self):
         """
@@ -18,6 +19,7 @@ class BaseKrakenWS:
         for BTC/USD.
         """
 
+        # FIXME, do we have a pointless layer of threads here?
         websocket_thread = threading.Thread(target=self.run_websocket)
         websocket_thread.start()
 
@@ -158,7 +160,7 @@ class BaseKrakenWS:
         else:
             conn = "wss://ws.kraken.com/v2"
 
-        ws = websocket.WebSocketApp(
+        self.ws = websocket.WebSocketApp(
             conn,
             on_open=self._on_open,
             on_message=self._on_message,
@@ -166,8 +168,14 @@ class BaseKrakenWS:
             on_close=self._on_close,
         )
 
-        ws.run_forever()
-
+        self.is_running = True
+        self.ws.run_forever()
+        print('here')
+        self.is_running = False
+    
+    def stop_websocket(self):
+        if self.ws is not None:
+            self.ws.close()
 
 if __name__ == "__main__":
     with open(f"/home/alg/.api.toml", "r") as fil:

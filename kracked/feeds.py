@@ -148,6 +148,7 @@ class KrakenL2(BaseKrakenWS):
 
         self.depth = depth
         self.symbols = symbols
+        self.updated = {s: False for s in symbols}
         self.books = {s:{} for s in symbols}
         self.auth = False
         self.trace = trace
@@ -201,13 +202,13 @@ class KrakenL2(BaseKrakenWS):
 
 
             else:
-                # FIXME need to deal with the separate time stamps in the case of very 
-                # high frequency strategies where the small intervals between one ping from 
-                # the websocket may make a difference.
+                # Initalize a flag for if a given symbol's book has been updated.
+
                 self.count += 1
 
                 data = response["data"]
                 symbol = data[0]["symbol"]
+                self.updated[symbol] = True
 
                 if ("bids" in response["data"][0].keys()) & (
                     "asks" in response["data"][0].keys()
@@ -311,41 +312,44 @@ class KrakenL2(BaseKrakenWS):
                 if self.count % self.log_book_every:
                     if self.append_book:
                         for symbol in self.symbols: 
-                            output = True
-                            full_L2_orderbook = {"b": self.books[symbol]["bids"], "a": self.books[symbol]["asks"]}
 
-                            aps = list(full_L2_orderbook["a"].keys())
-                            avs = list(full_L2_orderbook["a"].values())
-                            bps = list(full_L2_orderbook["b"].keys())
-                            bvs = list(full_L2_orderbook["b"].values())
+                            if self.updated[symbol]:
 
-                            aps = [str(ap) for ap in aps]
-                            avs = [str(av) for av in avs]
-                            bps = [str(bp) for bp in bps]
-                            bvs = [str(bv) for bv in bvs]
+                                output = True
+                                full_L2_orderbook = {"b": self.books[symbol]["bids"], "a": self.books[symbol]["asks"]}
 
-                            most_recent_timestamp = len(data) - 1
-                            line = [str(data[most_recent_timestamp]['timestamp']), *aps, *avs, *bps, *bvs] 
+                                aps = list(full_L2_orderbook["a"].keys())
+                                avs = list(full_L2_orderbook["a"].values())
+                                bps = list(full_L2_orderbook["b"].keys())
+                                bvs = list(full_L2_orderbook["b"].values())
 
-                            ssymbol = symbol.replace("/", "_")
-                            if not os.path.exists(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"):
-                                with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "w") as fil:
-                                    apls = []
-                                    avls = []
-                                    bpls = []
-                                    bvls = []
-                                    for i in range(self.depth):
-                                        apls.append("ap" + str(i))
-                                        avls.append("av" + str(i))
-                                        bpls.append("bp" + str(i))
-                                        bvls.append("bv" + str(i))
-                                    labels = ["timestamp", *apls, *avls, *bpls, *bvls] 
-                                    fil.write(",".join(labels) + "\n")
-                                    fil.write(",".join(line) + "\n")
-                            else:
-                                with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "a") as fil:
-                                    fil.write(",".join(line) + "\n")
+                                aps = [str(ap) for ap in aps]
+                                avs = [str(av) for av in avs]
+                                bps = [str(bp) for bp in bps]
+                                bvs = [str(bv) for bv in bvs]
 
+                                most_recent_timestamp = len(data) - 1
+                                line = [str(data[most_recent_timestamp]['timestamp']), *aps, *avs, *bps, *bvs] 
+
+                                ssymbol = symbol.replace("/", "_")
+                                if not os.path.exists(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"):
+                                    with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "w") as fil:
+                                        apls = []
+                                        avls = []
+                                        bpls = []
+                                        bvls = []
+                                        for i in range(self.depth):
+                                            apls.append("ap" + str(i))
+                                            avls.append("av" + str(i))
+                                            bpls.append("bp" + str(i))
+                                            bvls.append("bv" + str(i))
+                                        labels = ["timestamp", *apls, *avls, *bpls, *bvls] 
+                                        fil.write(",".join(labels) + "\n")
+                                        fil.write(",".join(line) + "\n")
+                                else:
+                                    with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "a") as fil:
+                                        fil.write(",".join(line) + "\n")
+                        self.updated[symbol] = False
                     with open(f"{self.output_directory}/L2_live_orderbooks.json", "w") as fil:
                         json.dump(self.books, fil)
                 else:
