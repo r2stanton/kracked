@@ -1,14 +1,23 @@
+* {
+    margin: 0;
+    padding: 0;
+}
+
 body {
     font-family: Arial, sans-serif;
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
-    background-color: #f4f4f4;
+    min-height: 100vh;
+    width: 100vw;
+    background-color: #221F30;
+    color: white;
 }
 
 .container {
-    width: 80%;
+    width: 100%;
+    background-color: #221F30;
+    color: white;
 }
 
 canvas {

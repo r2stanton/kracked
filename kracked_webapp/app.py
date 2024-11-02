@@ -15,7 +15,7 @@ ACCENT_GREEN = '#2ecc71'  # Added ACCENT_GREEN for consistency
 TEXT_COLOR = '#ecf0f1'
 BORDER_COLOR = '#7f8c8d'  # Updated border color to a lighter gray
 GRID_COLOR = '#3a3a4e'    # Defined gridline color variable
-BORDER_WIDTH = 2           # Increased width for more prominent borders
+BORDER_WIDTH = 3           # Increased width for more prominent borders
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
@@ -25,7 +25,7 @@ app.layout = html.Div(style={
     'display': 'grid',
     'gridTemplateColumns': '50% 50%',  # Left column is smaller than right column
     'gridTemplateRows': '1fr 1fr',  # Two equal rows
-    'gap': '10px',
+    'gap': '100px',
     'backgroundColor': BG_COL,
     'color': TEXT_COLOR,
     'font-family': 'Verdana, sans-serif',  # Updated font for consistency
@@ -62,31 +62,43 @@ app.layout = html.Div(style={
     Input('interval-component', 'n_intervals')
 )
 def update_graphs(n):
+
+    # LOAD IN ALL DATA AND GET IN PLOTTABLE FORM
+    base_dir = "../examples/ex_multifeed_out"
+    symbol = "DOGE/USD"
     try:
         # Read data from CSV files
-        df = pd.read_csv('data/L1_BBO.csv')
-        df_ohlc = pd.read_csv('data/ohlc.csv')
-        df_ohlc['tend'] = pd.to_datetime(df_ohlc['tend'])
+        l1df = pd.read_csv(f'{base_dir}/L1.csv')
+        l1df = l1df[l1df['symbol'] == symbol]
+        df_ohlc = pd.read_csv(f'{base_dir}/OHLC.csv')
+        df_ohlc = df_ohlc[df_ohlc['symbol'] == symbol]
+        df_ohlc = df_ohlc.groupby('timestamp').last().reset_index()
 
-        with open("data/L2_orderbook.json", 'r') as f:
+
+        df_ohlc['tend'] = pd.to_datetime(df_ohlc['timestamp'])
+
+        with open(f'{base_dir}/L2_live_orderbooks.json', 'r') as f:
             data_unp = json.load(f)
+            data_unp = data_unp[symbol]
+
+
         data = {}
-        for dk in data_unp['b'].keys():
-            data[dk] = data_unp['b'][dk]
-        for dk in data_unp['a'].keys():
-            data[dk] = data_unp['a'][dk]
+        for dk in data_unp['bids'].keys():
+            data[dk] = data_unp['bids'][dk]
+        for dk in data_unp['asks'].keys():
+            data[dk] = data_unp['asks'][dk]
         myKeys = list(data.keys())
         myKeys.sort()
         # Sorted Dictionary
         data = {i: data[i] for i in myKeys}
 
-        # Ensure the 'timestamp', 'bbo', and 'bao' columns are present
-        required_columns = ['timestamp', 'bbo', 'bao']
-        if not all(col in df.columns for col in required_columns):
+        # Ensure the 'timestamp', 'bid', and 'ask' columns are present
+        required_columns = ['timestamp', 'bid', 'ask']
+        if not all(col in l1df.columns for col in required_columns):
             raise ValueError(f"CSV must contain {', '.join(required_columns)} columns.")
 
         # Convert the 'timestamp' column to datetime
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        l1df['timestamp'] = pd.to_datetime(l1df['timestamp'])
 
         # Create first figure (Plot 1)
         figure1 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,
@@ -94,8 +106,8 @@ def update_graphs(n):
 
         # Add traces for BBO
         figure1.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['bbo'],
+            x=l1df['timestamp'],
+            y=l1df['bid'],
             mode='lines+markers',
             marker_color=ACCENT_BLUE,
             name='BBO'
@@ -103,8 +115,8 @@ def update_graphs(n):
 
         # Add traces for BAO
         figure1.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['bao'] - df['bbo'],
+            x=l1df['timestamp'],
+            y=l1df['ask'] - l1df['bid'],
             mode='lines+markers',
             marker_color=ACCENT_RED,
             name='Spread'
@@ -173,7 +185,7 @@ def update_graphs(n):
             low=df_ohlc['low'],
             close=df_ohlc['close'],
             name='OHLC',
-            increasing=dict(line=dict(color=ACCENT_BLUE), fillcolor=ACCENT_GREEN),
+            increasing=dict(line=dict(color=ACCENT_BLUE), fillcolor=ACCENT_BLUE),
             decreasing=dict(line=dict(color=ACCENT_RED), fillcolor=ACCENT_RED)
         )
         figure2.add_trace(candlestick, row=1, col=1)
