@@ -217,6 +217,7 @@ class KrakenL2(BaseKrakenWS):
                     bids = response["data"][0]["bids"]
                     asks = response["data"][0]["asks"]
 
+
                     bqty = [b["qty"] for b in bids]
                     aqty = [a["qty"] for a in asks]
                     new_bids = [
@@ -309,7 +310,8 @@ class KrakenL2(BaseKrakenWS):
                 self.books[symbol]["bids"] = dict(sorted(self.books[symbol]["bids"].items(), reverse=True))
                 self.books[symbol]["asks"] = dict(sorted(self.books[symbol]["asks"].items(), reverse=False))
 
-                if self.count % self.log_book_every:
+                # FIXME Add counter for each symbol to consider logging separately.
+                if self.count % self.log_book_every == 0:
                     if self.append_book:
                         for symbol in self.symbols: 
 
@@ -323,33 +325,33 @@ class KrakenL2(BaseKrakenWS):
                                 bps = list(full_L2_orderbook["b"].keys())
                                 bvs = list(full_L2_orderbook["b"].values())
 
-                                aps = [str(ap) for ap in aps]
-                                avs = [str(av) for av in avs]
-                                bps = [str(bp) for bp in bps]
-                                bvs = [str(bv) for bv in bvs]
+                                aps = [f"{ap:.9f}" for ap in aps]
+                                avs = [f"{av:.9f}" for av in avs]
+                                bps = [f"{bp:.9f}" for bp in bps]
+                                bvs = [f"{bv:.9f}" for bv in bvs]
 
                                 most_recent_timestamp = len(data) - 1
-                                line = [str(data[most_recent_timestamp]['timestamp']), *aps, *avs, *bps, *bvs] 
+
+                                # NOTE TIME MAYBE NOT THE MOST ACCURATE
+                                line = [str(data[most_recent_timestamp]['timestamp'])]
+                                for i in range(self.depth):
+                                    line.extend([aps[i], avs[i], bps[i], bvs[i]])
 
                                 ssymbol = symbol.replace("/", "_")
                                 if not os.path.exists(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"):
                                     with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "w") as fil:
-                                        apls = []
-                                        avls = []
-                                        bpls = []
-                                        bvls = []
+
+                                        labels=["timestamp"]
                                         for i in range(self.depth):
-                                            apls.append("ap" + str(i))
-                                            avls.append("av" + str(i))
-                                            bpls.append("bp" + str(i))
-                                            bvls.append("bv" + str(i))
-                                        labels = ["timestamp", *apls, *avls, *bpls, *bvls] 
+                                            labels.extend(["ap" + str(i), "av" + str(i), "bp" + str(i), "bv" + str(i)])
+
                                         fil.write(",".join(labels) + "\n")
                                         fil.write(",".join(line) + "\n")
                                 else:
                                     with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "a") as fil:
                                         fil.write(",".join(line) + "\n")
-                        self.updated[symbol] = False
+
+                            self.updated[symbol] = False
                     with open(f"{self.output_directory}/L2_live_orderbooks.json", "w") as fil:
                         json.dump(self.books, fil)
                 else:
