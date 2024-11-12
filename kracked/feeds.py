@@ -911,22 +911,3 @@ class KrakenInstruments(BaseKrakenWS):
             }
 
         ws.send(json.dumps(subscription))
-
-
-if __name__ == "__main__":
-    with open(f"/home/alg/.api.toml", "r") as fil:
-        data = toml.load(fil)
-    api_key = data["kraken_api"]
-    api_secret = data["kraken_sec"]
-
-
-    instruments = KrakenInstruments(trace=False, output_directory=".")
-    instruments.launch()
-    # os.system("rm data/trades.csv")
-    # tradefeed = KrakenTrades("BTC/USD", trace=False, api_key=api_key, secret_key=api_secret, write_every=1,
-    # output_directory=".")
-    # tradefeed.launch()
-
-
-    # L1feed = KrakenL1("BTC/USD", api_key=api_key, secret_key=api_secret, trace=False)
-    # L1feed.launch()

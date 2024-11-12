@@ -132,33 +132,3 @@ class KrakenFeedManager:
             thread.join(timeout=5)
         print("All WebSocket threads have been stopped.")
 
-    
-
-if __name__ == "__main__":
-    with open("/home/alg/.api.toml", "r") as fil:
-        data = toml.load(fil)
-    api_key = data["kraken_api"]
-    api_secret = data["kraken_sec"]
-
-    manager = KrakenFeedManager("BTC/USD",
-                                api_key=api_key,
-                                api_secret=api_secret,
-                                L1=False,
-                                L2=False,
-                                L3=False,
-                                ohlc=False,  
-                                trades= False,
-                                instruments=True,
-
-                                L3_params={"log_ticks_every": 10},
-                                ohlc_params={"interval": 1},
-                                trades_params={"log_trades_every": 1},
-                                )
-    manager.start_all()
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Interrupted by user. Stopping all WebSockets...")
-        manager.stop_all()
