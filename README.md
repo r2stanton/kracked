@@ -36,7 +36,15 @@ will change in the near future, but keep in mind that ANY algorithmic trading
 strategies are 100% subject to be rendered incompatible with EITHER changes in 
 CCXT, or changes associated with order placement using the Kraken REST API.
 
-#### Structure currently of the code base:
+## Webapp
+Check back soon for more information on the webapp. I'll be integrating features for tracking 
+live performance, multiple symbols and the like. For now, consider it highly experimental, but 
+feel free to play with the app.py files/settings. It can currently visualize the live L2 book,
+price data, spread, and any entries/exits associated wtih algorithmic trading strategies. This
+element is subject to potentially being moved to its own package at some point if it can be
+sufficiently well generalized to different data sources. 
+
+### Structure currently of the code base:
 ```
 ├── LICENSE
 ├── README.md
