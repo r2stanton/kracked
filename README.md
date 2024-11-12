@@ -22,15 +22,15 @@ the utilization of this code is 100% the responsibilty of the user.
 Users can find a set of example scripts in the examples folder. A couple notes 
 about using these files.
 
-1. Ensure that your outputs correspond (qualitatively) to those in the ex_out/ 
-if you are using the single-threaded approaches in the examples/ folder.
-2. kracked supports multithreaded feeds using the kracked/manager.py module. If
+1. Ensure that your outputs correspond (qualitatively) to those in the `ex_out/` 
+folder if you are using the single-threaded approaches in the `examples/` folder.
+2. kracked supports multithreaded feeds using the `kracked/manager.py` module. If
 you choose to use this approach, ensure that your outputs correspond (again 
-qualitatively) to those in examples/ex_multifeed_out/. This makes it simple to 
+qualitatively) to those in `examples/ex_multifeed_out/`. This makes it simple to 
 spin up a feed subscribing to multiple Kraken v2 API endpoints using a single
-core. See the multifeed_examples.py file.
+core. See the `multifeed_examples.py` file.
 3. Examples of how to load and parse the data are available in the 
-example_data_loading.ipynb files.
+`example_data_loading.ipynb` files.
 4. For now, order execution simply relies on the CCXT->Kraken REST API. This
 will change in the near future, but keep in mind that ANY algorithmic trading
 strategies are 100% subject to be rendered incompatible with EITHER changes in 
