@@ -3,7 +3,7 @@ Efficiency-first framework for pulling, storing, and aggregating Kraken data
 using the v2 API. 
 
 1. All market data is avaiable through WebSocket subscription using this package
-by leveraging the Kraken v2 API (see for example [their excellent API] (https://docs.kraken.com/api/docs/websocket-v2/add_order).
+by leveraging the Kraken v2 API (see for example [their excellent API](https://docs.kraken.com/api/docs/websocket-v2/add_order)).
 2. See the code or the example files for a general overview of the type of files
 that will be created for you upon subscription to the data feeds.
 3. Order placement (for now) relies on the REST API. See below in the Usage
