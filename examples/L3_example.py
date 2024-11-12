@@ -1,11 +1,8 @@
 from kracked.feeds import KrakenL3
 import toml
 
-# Load/type directly as arguments to the KrakenL3 constructor your API info.
-with open(f"/home/alg/.api.toml", "r") as fil:
-    data = toml.load(fil)
-api_key = data['kraken_api']
-api_secret = data['kraken_sec']
+#api_key = YOUR_API_KEY
+#api_secret = YOUR_SECRET_KEY
 
 l3feed = KrakenL3(
     ["DOGE/USD", "BTC/USD"],        # List or str of requested symbols.
