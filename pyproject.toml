@@ -14,8 +14,8 @@ requires = ["setuptools",
 	    "asyncio",
 	    "websockets",
 	    "toml",
-	    "mplfinance",
 	    "numpy"
+	    "ccxt"
 	    ]
 	
 
