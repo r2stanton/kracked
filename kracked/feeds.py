@@ -7,7 +7,7 @@ import datetime
 
 class KrakenL1(BaseKrakenWS):
     """
-    Class extending BaseKrakenWS geared towards L3 feeds from the Kraken v2 API.
+    Class extending BaseKrakenWS geared towards L1 feeds from the Kraken v2 API.
     """
 
     def __init__(
@@ -119,7 +119,7 @@ class KrakenL1(BaseKrakenWS):
 
 class KrakenL2(BaseKrakenWS):
     """
-    Class extending BaseKrakenWS geared towards L3 feeds from the Kraken v2 API.
+    Class extending BaseKrakenWS geared towards L2 feeds from the Kraken v2 API.
     """
 
     def __init__(
@@ -436,6 +436,7 @@ class KrakenL3(BaseKrakenWS):
         api_key=None,
         secret_key=None,
         trace=False,
+        depth=10,
         out_file_name="L3_ticks.csv",
         log_ticks_every=100,
         log_for_webapp=False,   # FIXME does nothing
@@ -474,6 +475,7 @@ class KrakenL3(BaseKrakenWS):
         self.trace = trace
         self.api_key = api_key
         self.api_secret = secret_key
+        self.depth = depth
         self.log_ticks_every = log_ticks_every
         self.out_file_name = out_file_name
         self.ticks = []
@@ -483,10 +485,12 @@ class KrakenL3(BaseKrakenWS):
     def _on_message(self, ws, message):
         response = json.loads(message)
 
+        my_time = datetime.datetime.now()
+
         if len(self.ticks) > self.log_ticks_every:
             if not os.path.exists(f"{self.output_directory}/{self.out_file_name}"):
                 with open(f"{self.output_directory}/{self.out_file_name}", "w") as fil:
-                    fil.write("side,timestamp,price,size,event,order_id,symbol\n")
+                    fil.write("side,ts_event,ts_recv,price,size,action,order_id,symbol\n")
             else:
                 with open(f"{self.output_directory}/{self.out_file_name}", "a") as fil:
                     for tick in self.ticks:
@@ -509,10 +513,11 @@ class KrakenL3(BaseKrakenWS):
                     for bid in bids:
                         info = [
                             "b",  # Side
-                            bid["timestamp"],  # Time
+                            bid["timestamp"],  # Exchange Time
+                            my_time,  # My Time
                             bid["limit_price"],  # Price
                             bid["order_qty"],  # Size
-                            bid["event"],  # Event
+                            bid["event"],  # Action
                             bid["order_id"],  # OID
                             symbol
                         ]
@@ -522,10 +527,11 @@ class KrakenL3(BaseKrakenWS):
                     for ask in asks:
                         info = [
                             "a",  # Side
-                            ask["timestamp"],  # Time
+                            ask["timestamp"],  # Exchange Time
+                            my_time,  # My Time
                             ask["limit_price"],  # Price
                             ask["order_qty"],  # Size
-                            ask["event"],  # Event
+                            ask["event"],  # Action
                             ask["order_id"],  # OID
                             symbol
                         ]
@@ -548,7 +554,11 @@ class KrakenL3(BaseKrakenWS):
 
         subscription = {
             "method": "subscribe",
-            "params": {"channel": "level3", "symbol": self.symbols, "token": ws_token},
+            "params": {"channel": "level3",
+                       "symbol": self.symbols,
+                       "token": ws_token,
+                       "depth":self.depth
+                       },
         }
 
         ws.send(json.dumps(subscription))

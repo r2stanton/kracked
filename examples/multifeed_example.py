@@ -9,22 +9,21 @@ api_key = data['kraken_api']
 api_secret = data['kraken_sec']
 
 
-all_feeds = KrakenFeedManager(["DOGE/USD", "BTC/USD", "SOL/USD"],
+all_feeds = KrakenFeedManager(["DOGE/USD", "BTC/USD", "SOL/USD", "ETH/USD"],
                           api_key, 
                           api_secret,
-                          L1=True,
+                          L1=False,
                           L2=True,
                           L3=True,
                           trades=True,
                           ohlc=True,
                           output_directory="ex_multifeed_out",
 
-                          L2_params={'log_book_every':50,},
-                          L3_params={'log_ticks_every':1500},
+                          L2_params={'log_book_every':1,},
+                          L3_params={'log_ticks_every':100},
                           ohlc_params={'interval':5},
                           trades_params={'log_trades_every':50}
                           )
-
 
 
 all_feeds.start_all()
