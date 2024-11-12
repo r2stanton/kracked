@@ -1,15 +1,24 @@
 # kracked
-Efficiency-first framework for pulling, storing, and aggregating Kraken data using the v2 API.
+Efficiency-first framework for pulling, storing, and aggregating Kraken data
+using the v2 API. 
+
+1. All market data is avaiable through WebSocket subscription using this package
+by leveraging the Kraken v2 API (see for example [their excellent API] (https://docs.kraken.com/api/docs/websocket-v2/add_order).
+2. See the code or the example files for a general overview of the type of files
+that will be created for you upon subscription to the data feeds.
+3. Order placement (for now) relies on the REST API. See below in the Usage
+section.
+
 
 ## Comments
-The Kracked package is still in pre-release and should be considere highly 
+The Kracked package is still in pre-release and should be considered highly 
 experimental. Do not build out any excessively time-intensive routines using 
-the package as many things are subject to change. The code is relased AS-IS 
-and the developers are not responsible for any bugs, misbehavior of the code, 
-or anything of the sort. 
+the package as many things are subject to change (in the near future). The code
+is relased AS-IS and the developers are not responsible for any bugs,
+misbehavior of the code, or anything of the sort. 
 
 ## Usage
-Users can find a set of example scripts in the exmaples folder. A couple notes 
+Users can find a set of example scripts in the examples folder. A couple notes 
 about using these files.
 
 1. Ensure that your outputs correspond (qualitatively) to those in the ex_out/ 
@@ -21,6 +30,10 @@ spin up a feed subscribing to multiple Kraken v2 API endpoints using a single
 core. See the multifeed_examples.py file.
 3. Examples of how to load and parse the data are available in the 
 example_data_loading.ipynb files.
+4. For now, order execution simply relies on the CCXT->Kraken REST API. This
+will change in the near future, but keep in mind that ANY algorithmic trading
+strategies are 100% subject to be rendered incompatible with EITHER changes in 
+CCXT, or changes associated with order placement using the Kraken REST API.
 
 #### Structure currently of the code base:
 ```
@@ -53,7 +66,8 @@ example_data_loading.ipynb files.
 ├── kracked
 │   ├── actions.py
 │   ├── core.py
-│   ├── data
+│   ├── manager.py
+│   ├── feeds.py
 ├── kracked_webapp
 │   ├── app.py
 │   ├── data
@@ -72,11 +86,5 @@ example_data_loading.ipynb files.
 
 To-Do
 -----
-
-All Market Feeds Working:
-L1, L2, L3
-Bars (OHLCV)
-Trade
-Instruments*
-
-Mult-threaded Feed Manager
+1. Efficiency improvements (periodic transition from csv->parquet.
+2. Compliance with Databento schemas where applicable.
