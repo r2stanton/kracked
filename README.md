@@ -15,7 +15,8 @@ The Kracked package is still in pre-release and should be considered highly
 experimental. Do not build out any excessively time-intensive routines using 
 the package as many things are subject to change (in the near future). The code
 is relased AS-IS and the developers are not responsible for any bugs,
-misbehavior of the code, or anything of the sort. 
+misbehavior of the code, or anything of the sort. Any loss of funds resulting from
+the utilization of this code is 100% the responsibilty of the user.
 
 ## Usage
 Users can find a set of example scripts in the examples folder. A couple notes 
