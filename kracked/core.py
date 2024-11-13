@@ -171,8 +171,7 @@ class BaseKrakenWS:
         self.is_running = True
         self.ws.run_forever()
         self.is_running = False
-    
+
     def stop_websocket(self):
         if self.ws is not None:
             self.ws.close()
-

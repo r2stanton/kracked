@@ -15,8 +15,7 @@ requires = ["setuptools",
 	    "websockets",
 	    "toml",
 	    "numpy"
-	    "ccxt"
-	    ]
+	    "ccxt"]
 	
 
 # The name of the Python object that frontends will use to perform the build:
