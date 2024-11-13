@@ -640,8 +640,6 @@ class KrakenOHLC(BaseKrakenWS):
     def _on_message(self, ws, message):
         """
         Message handler for the OHLC feed.
-
-
         """
         response = json.loads(message)
 
@@ -821,7 +819,6 @@ class KrakenTrades(BaseKrakenWS):
         if len(self.all_trades) >= self.log_trades_every:
 
             if not os.path.exists(f"{self.output_directory}/trades.csv"):
-                print(f"Writing file {self.output_directory}/trades.csv")
                 with open(f"{self.output_directory}/trades.csv", "w") as fil:
                     fil.write("ts_event,symbol,price,qty,side,ord_type,trade_id\n")
 
