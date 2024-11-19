@@ -115,7 +115,6 @@ class KrakenL1(BaseKrakenWS):
         }
         ws.send(json.dumps(subscription))
 
-
 class KrakenL2(BaseKrakenWS):
     """
     Class extending BaseKrakenWS geared towards L2 feeds from the Kraken v2 API.
@@ -442,7 +441,6 @@ class KrakenL2(BaseKrakenWS):
 
         ws.send(json.dumps(subscription))
 
-
 class KrakenL3(BaseKrakenWS):
     """
     Class extending BaseKrakenWS for the L3 feed from the Kraken v2 API.
@@ -599,7 +597,6 @@ class KrakenL3(BaseKrakenWS):
 
         ws.send(json.dumps(subscription))
 
-
 class KrakenOHLC(BaseKrakenWS):
     """
     Class extending BaseKrakenWS for the time-aggregated OHLC data from the Kraken v2 API.
@@ -637,6 +634,7 @@ class KrakenOHLC(BaseKrakenWS):
         trace=False,
         interval=5,
         output_directory=".",
+        ccxt_snapshot=False,
     ):
         """
         Constructor for the KrakenOHLC class.
@@ -791,7 +789,6 @@ class KrakenOHLC(BaseKrakenWS):
 
         ws.send(json.dumps(subscription))
 
-
 class KrakenTrades(BaseKrakenWS):
     """
     Websocket for the Trade endpoint from the Kraken v2 API.
@@ -881,7 +878,6 @@ class KrakenTrades(BaseKrakenWS):
         }
 
         ws.send(json.dumps(subscription))
-
 
 class KrakenInstruments(BaseKrakenWS):
     def __init__(self, trace=False, output_directory="."):
