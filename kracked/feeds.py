@@ -3,6 +3,7 @@ from zlib import crc32 as CRC32
 import numpy as np
 import toml, json, os
 import datetime
+import ccxt
 
 
 class KrakenL1(BaseKrakenWS):
@@ -669,6 +670,8 @@ class KrakenOHLC(BaseKrakenWS):
         self.ticks = []
         self.interval = interval
         self.output_directory = output_directory
+        self.ccxt_snapshot = ccxt_snapshot
+
 
     def _on_message(self, ws, message):
         """
@@ -725,48 +728,51 @@ class KrakenOHLC(BaseKrakenWS):
                         fil.write(",".join(info) + "\n")
 
                 elif response["type"] == "snapshot":
-                    full_data = response["data"]
-                    assert len(full_data) > 1, "Data shorter than expected"
 
-                    info_lines = []
-                    for data in full_data:
-                        symbol = data["symbol"]
-                        open_p = data["open"]
-                        high = data["high"]
-                        low = data["low"]
-                        close = data["close"]
-                        trades = data["trades"]
-                        volume = data["volume"]
-                        vwap = data["vwap"]
-                        tend = data["timestamp"]
-                        tstart = data["interval_begin"]
-                        ttrue = response["timestamp"]
+                    if not self.ccxt_snapshot:
 
-                        info = [
-                            tend,
-                            symbol,
-                            str(open_p),
-                            str(high),
-                            str(low),
-                            str(close),
-                            str(volume),
-                            str(vwap),
-                            str(trades),
-                            tstart,
-                            ttrue,
-                        ]
+                        full_data = response["data"]
+                        assert len(full_data) > 1, "Data shorter than expected"
 
-                        info_lines.append(info)
+                        info_lines = []
+                        for data in full_data:
+                            symbol = data["symbol"]
+                            open_p = data["open"]
+                            high = data["high"]
+                            low = data["low"]
+                            close = data["close"]
+                            trades = data["trades"]
+                            volume = data["volume"]
+                            vwap = data["vwap"]
+                            tend = data["timestamp"]
+                            tstart = data["interval_begin"]
+                            ttrue = response["timestamp"]
 
-                    for info in info_lines:
-                        if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
-                            with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
-                                fil.write(
-                                    "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
-                                )
-                        else:
-                            with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
-                                fil.write(",".join(info) + "\n")
+                            info = [
+                                tend,
+                                symbol,
+                                str(open_p),
+                                str(high),
+                                str(low),
+                                str(close),
+                                str(volume),
+                                str(vwap),
+                                str(trades),
+                                tstart,
+                                ttrue,
+                            ]
+
+                            info_lines.append(info)
+
+                        for info in info_lines:
+                            if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                                with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
+                                    fil.write(
+                                        "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                    )
+                            else:
+                                with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
+                                    fil.write(",".join(info) + "\n")
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
                 pass
@@ -788,6 +794,43 @@ class KrakenOHLC(BaseKrakenWS):
         }
 
         ws.send(json.dumps(subscription))
+
+        # Optionally use CCXT for the historical candles, because they 
+        # provide mode than the snapshot directly from the websocket. 
+        # Take care that these do not have all of the information that 
+        # one can obtain from the websocket (e.g. VWAP)
+        if self.ccxt_snapshot:
+            k = ccxt.kraken()
+            info_lines = []
+            for symbol in self.symbols:
+                candles = k.fetch_ohlcv(symbol, timeframe=f"{self.interval}m")
+                for c in candles:
+                    curr_data = []
+                    ts_raw = c[0]/1000
+                    formatted_timestamp = datetime.datetime.utcfromtimestamp(ts_raw).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+                    curr_data = [formatted_timestamp,
+                                    symbol,
+                                    str(c[1]),                  # open
+                                    str(c[2]),                  # high
+                                    str(c[3]),                  # low
+                                    str(c[4]),                  # close
+                                    str(c[5]),                  # volume
+                                    "NaN",                 # vwap placeholder
+                                    "NaN",                 # trades placeholder
+                                    "NaN",                 # tstart placeholder
+                                    "NaN"]                 # ttrue placeholder
+                    info_lines.append(curr_data)
+
+            for info in info_lines:
+                if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                    with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
+                        fil.write(
+                            "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                        )
+                else:
+                    with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
+                        fil.write(",".join(info) + "\n")
 
 class KrakenTrades(BaseKrakenWS):
     """

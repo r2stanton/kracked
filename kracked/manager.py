@@ -87,11 +87,13 @@ class KrakenFeedManager:
         if ohlc:
             print("KrakenFeedManager: Initializing OHLC feed")
             interval = ohlc_params.get("interval", 5)
+            ccxt_snapshot = ohlc_params.get("ccxt_snapshot", False)
             self.ohlc = KrakenOHLC(
                 symbols,
                 trace=False,
                 output_directory=output_directory,
                 interval=interval,
+                ccxt_snapshot=ccxt_snapshot,
             )
             self.feeds["ohlc"] = self.ohlc
         if trades:
