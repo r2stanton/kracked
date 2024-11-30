@@ -558,7 +558,7 @@ class KrakenL3(BaseKrakenWS):
                             bid["timestamp"],  # Exchange Time
                             my_time,  # My Time
                             bid["limit_price"],  # Price
-                            bid["order_qty"],  # Size
+                            bid["size"],  # Size
                             bid["event"],  # Action
                             bid["order_id"],  # OID
                             symbol,
