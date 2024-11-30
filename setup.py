@@ -14,7 +14,10 @@ setup(
     long_description_content_type="text/markdown",
     long_description=LONG_DESCRIPTION,
     packages=find_packages(),
-    install_requires=['numpy', 'pandas', 'ccxt', 'websockets', 'toml'],
+
+    install_requires=['numpy', 'pandas', 'ccxt',
+                      'websockets', 'toml', 'pyarrow'],
+
     keywords=['cryptocurrency', 'crypto', 'algorithmic trading', 'quantitative finance',
               'exchange', 'Kraken'],
     classifiers=[
