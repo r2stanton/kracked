@@ -1,6 +1,5 @@
 import websocket, json, threading, hashlib, toml
 import urllib.parse, hmac, base64, time, requests
-import asyncio
 
 
 class BaseKrakenWS:
