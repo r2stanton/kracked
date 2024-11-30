@@ -3,7 +3,7 @@ from zlib import crc32 as CRC32
 import numpy as np
 import toml, json, os
 import datetime
-import ccxt
+import ccxt, time
 
 
 class KrakenL1(BaseKrakenWS):
@@ -132,6 +132,7 @@ class KrakenL2(BaseKrakenWS):
         log_book_every=100,
         append_book=True,
         log_bbo_every=200,
+        convert_to_parquet_every=False,
     ):
 
         assert depth in [
@@ -158,6 +159,7 @@ class KrakenL2(BaseKrakenWS):
         self.append_book = append_book
         self.count = 0
         self.output_directory = output_directory
+        self.convert_to_parquet_every = convert_to_parquet_every
 
     def _on_message(self, ws, message):
         response = json.loads(message)
@@ -362,10 +364,10 @@ class KrakenL2(BaseKrakenWS):
                                         for i in range(self.depth):
                                             labels.extend(
                                                 [
-                                                    "ap" + str(i),
-                                                    "av" + str(i),
-                                                    "bp" + str(i),
-                                                    "bv" + str(i),
+                                                    "ask_px_" + str(i),
+                                                    "ask_sz_" + str(i),
+                                                    "bid_px_" + str(i),
+                                                    "bid_sz_" + str(i),
                                                 ]
                                             )
 
@@ -386,7 +388,13 @@ class KrakenL2(BaseKrakenWS):
                 else:
                     output = False
 
+                if type(self.convert_to_parquet_every) == int:
+                    if self.count % self.convert_to_parquet_every == 0:
+                        time.sleep(10)
+                        print("Done Sleeping")
+
     def _book_checksum(self, ws, checksum, symbol):
+        # FIXME Check this after writing each parquet.
 
         bid_keys = list(self.books[symbol]["bids"].keys())
         ask_keys = list(self.books[symbol]["asks"].keys())
