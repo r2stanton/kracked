@@ -56,7 +56,6 @@ class KrakenFeedManager:
         if L2:
             print("KrakenFeedManager: Initializing L2 feed")
             log_book_every = L2_params.get("log_book_every", 100)
-            log_bbo_every = L2_params.get("log_bbo_every", 200)
             append_book = L2_params.get("append_book", True)
             depth = L2_params.get("depth", 10)
 
@@ -66,7 +65,6 @@ class KrakenFeedManager:
                 output_directory=output_directory,
                 depth=depth,
                 log_book_every=log_book_every,
-                log_bbo_every=log_bbo_every,
                 append_book=append_book,
             )
             self.feeds["L2"] = self.L2

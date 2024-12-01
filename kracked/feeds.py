@@ -135,7 +135,7 @@ class KrakenL2(BaseKrakenWS):
         log_book_every=1,
         append_book=True,
         convert_to_parquet_every=1000,
-        do_parquet=True
+        parquet_flag=True
     ):
         """
         Constructor for the KrakenL2 class.
@@ -210,7 +210,7 @@ class KrakenL2(BaseKrakenWS):
         self.symbol_counts = {s: 0 for s in symbols}
         self.output_directory = output_directory
         self.convert_to_parquet_every = convert_to_parquet_every
-        self.do_parquet = do_parquet
+        self.parquet_flag = parquet_flag
 
     def _on_message(self, ws, message):
         response = json.loads(message)
@@ -444,8 +444,7 @@ class KrakenL2(BaseKrakenWS):
                     output = False
 
                 for s in self.symbols:
-                    if self.symbol_counts[s] >= self.convert_to_parquet_every and self.do_parquet:
-                        print(self.symbol_counts[s], s)
+                    if self.symbol_counts[s] >= self.convert_to_parquet_every and self.parquet_flag:
                         ssymbol = s.replace("/", "_")
                         self.symbol_counts[s] = 0
                         df = pd.read_csv(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
@@ -539,7 +538,7 @@ class KrakenL3(BaseKrakenWS):
         secret_key=None,
         trace=False,
         depth=10,
-        out_file_name="L3_ticks.parquet",
+        out_file_name="L3_ticks",
         log_ticks_every=100,
         log_for_webapp=False,  # FIXME does nothing
         parquet_flag=True,
@@ -552,20 +551,29 @@ class KrakenL3(BaseKrakenWS):
         -----------
             symbols: List[str] or str
                 The symbols to subscribe to.
+
             api_key: str
                 The user API key for the Kraken API.
+
             secret_key: str
                 The user secret key for the Kraken API.
+
             trace: bool
                 Whether to trace the websocket messages. Note these heavily clog the stdout.
+
             out_file_name: str
                 The name of the file to log the L3 data to. All symbols are logged to
                 the same file.
+                *NOTE* Only supply the FILE PREFIX here, the suffix will be determined, by whether
+                or not the parquet_flag is set to True or False.
+
             log_ticks_every: int
                 The number of incoming ticks before they are batch written to the desired
                 output file.
+
             log_for_webapp: bool
                 Whether to log information for the webapp. [Likely to be deprecated.]
+
             output_directory: str
                 The directory to log the L3 data to.
         """
@@ -581,11 +589,19 @@ class KrakenL3(BaseKrakenWS):
         self.api_secret = secret_key
         self.depth = depth
         self.log_ticks_every = log_ticks_every
-        self.out_file_name = out_file_name
+
+
+
         self.ticks = []
         self.output_directory = output_directory
         self.log_for_webapp = log_for_webapp
         self.parquet_flag = parquet_flag
+
+        if self.parquet_flag:
+            self.out_file_name = f"{out_file_name}.parquet"
+        else:
+            self.out_file_name = f"{out_file_name}.csv"
+
     def _on_message(self, ws, message):
         response = json.loads(message)
 

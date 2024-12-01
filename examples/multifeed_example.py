@@ -20,7 +20,7 @@ all_feeds = KrakenFeedManager(["DOGE/USD", "BTC/USD", "SOL/USD", "ETH/USD"],
                               output_directory="ex_multifeed_out",
 
                               L2_params={'log_book_every': 1},
-                              L3_params={'log_ticks_every': 100},
+                              L3_params={'log_ticks_every': 1000},
                               ohlc_params={'interval': 5,
                                            'ccxt_snapshot': True},
                               trades_params={'log_trades_every': 50}
