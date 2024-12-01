@@ -9,9 +9,17 @@ that will be created for you upon subscription to the data feeds.
 3. Order placement (for now) relies on the REST API. See below in the Usage
 section.
 
+## Installation
+Soon I will push the published code to the PyPI, allowing for you to run 
+
+```pip install kracked```
+
+However in the meanwhile, simply clone the repository, navigate to the folder with `setup.py` and run 
+
+```pip install -e .``` for an editable install.
 
 ## Comments
-The Kracked package is still in pre-release and should be considered highly 
+The `kracked` package is still in pre-release and should be considered highly 
 experimental. Do not build out any excessively time-intensive routines using 
 the package as many things are subject to change (in the near future). The code
 is relased AS-IS and the developers are not responsible for any bugs,
@@ -24,14 +32,21 @@ about using these files.
 
 1. Ensure that your outputs correspond (qualitatively) to those in the `ex_out/` 
 folder if you are using the single-threaded approaches in the `examples/` folder.
-2. kracked supports multithreaded feeds using the `kracked/manager.py` module. If
+2. `kracked` supports multithreaded feeds using the `kracked/manager.py` module. If
 you choose to use this approach, ensure that your outputs correspond (again 
 qualitatively) to those in `examples/ex_multifeed_out/`. This makes it simple to 
 spin up a feed subscribing to multiple Kraken v2 API endpoints using a single
 core. See the `multifeed_examples.py` file.
-3. Examples of how to load and parse the data are available in the 
-`example_data_loading.ipynb` files.
-4. For now, order execution simply relies on the CCXT->Kraken REST API. This
+
+***IMPORTANT*** See the logic in `multifeed_examples.py` for a way to have the connections automatically
+reconnect to the Websocket in the event of one feed timing out.
+
+
+4. Examples of how to load and parse the data are available in the 
+`example_data_loading.ipynb` files. These are for the older .csv formats, but shortly I'll update these
+with the parquet I/O.
+
+6. For now, order execution simply relies on the CCXT->Kraken REST API. This
 will change in the near future, but keep in mind that ANY algorithmic trading
 strategies are 100% subject to be rendered incompatible with EITHER changes in 
 CCXT, or changes associated with order placement using the Kraken REST API.
@@ -90,10 +105,3 @@ sufficiently well generalized to different data sources.
     └── test_l2.py
 
 ```
-
-
-
-To-Do
------
-1. Efficiency improvements (periodic transition from csv->parquet.
-2. Compliance with Databento schemas where applicable.
