@@ -1,6 +1,5 @@
 import websocket, json, threading, hashlib, toml
 import urllib.parse, hmac, base64, time, requests
-import asyncio
 
 
 class BaseKrakenWS:
@@ -171,8 +170,7 @@ class BaseKrakenWS:
         self.is_running = True
         self.ws.run_forever()
         self.is_running = False
-    
+
     def stop_websocket(self):
         if self.ws is not None:
             self.ws.close()
-

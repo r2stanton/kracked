@@ -3,6 +3,10 @@ from zlib import crc32 as CRC32
 import numpy as np
 import toml, json, os
 import datetime
+import ccxt, time
+import pandas as pd
+import pyarrow.parquet as pq
+import pyarrow as pa
 
 
 class KrakenL1(BaseKrakenWS):
@@ -30,7 +34,6 @@ class KrakenL1(BaseKrakenWS):
     def _on_error(self, ws, error):
         print("Error in L1 Feed")
         print(error)
-
 
     def _on_message(self, ws, message):
         recv_ts = datetime.datetime.now()
@@ -116,10 +119,9 @@ class KrakenL1(BaseKrakenWS):
         }
         ws.send(json.dumps(subscription))
 
-
 class KrakenL2(BaseKrakenWS):
     """
-    Class extending BaseKrakenWS geared towards L2 feeds from the Kraken v2 API.
+        Class for handling L2 data from the Kraken v2 API.
     """
 
     def __init__(
@@ -130,10 +132,58 @@ class KrakenL2(BaseKrakenWS):
         trace=False,
         output_directory=".",
         depth=10,
-        log_book_every=100,
+        log_book_every=1,
         append_book=True,
-        log_bbo_every=200,
+        convert_to_parquet_every=1000,
+        parquet_flag=True
     ):
+        """
+        Constructor for the KrakenL2 class.
+
+        The default behavior of this class is to log the book by change, including the FULL depth, 
+        so that there is no reconstruction of the book required when loading the data.
+
+        The book is logged in temporary CSV files, one per symbol, as well as a live JSON file for 
+        visualizing the book in real time.
+
+        The CSV files (using the default behavior) are converted to parquet files periodically as specified
+        by convert_to_parquet_every. This saves massively on diskspace, and allows for rapid IO when using
+        the data.
+
+        Note that the parquet files will exist in a FOLDER, named {output_directory}/L2_{symbol}_orderbook.parquet/
+        You can load this data using pandas as follows:
+
+        ```
+        import pandas as pd
+        df = pd.read_parquet(f"{output_directory}/L2_{symbol}_orderbook.parquet")
+        ```
+        *NOTE* the symbol name will convert "/" into "_" for any currency pairs.
+
+        symbols: List[str] or str
+            The symbols to subscribe to.
+        depth: int (default=10)
+            The depth of the orderbook to maintain.
+            Can be 10, 25, 100, 500, 1000.
+
+        trace: bool
+            Whether to trace the websocket messages. Note these heavily clog the stdout.
+
+        log_book_every: int (default=1)
+            The number of updates to log before writing to a file.
+
+        append_book: bool (default=True)
+            Whether to append to the existing book or overwrite entirely and only
+            write the "live" book (useful for live plotting software).
+
+        output_directory: str (default=".")
+            The directory to output the book log files into.
+
+        convert_to_parquet_every: int (default=1000)
+            The number of updates to log before converting the book to parquet.
+            *NOTE* This process REMOVES the corresponding CSV file.
+        do_parquet: bool
+            Whether to convert the book to parquet.
+        """
 
         assert depth in [
             10,
@@ -149,16 +199,18 @@ class KrakenL2(BaseKrakenWS):
         self.depth = depth
         self.symbols = symbols
         self.updated = {s: False for s in symbols}
-        self.books = {s:{} for s in symbols}
+        self.books = {s: {} for s in symbols}
         self.auth = False
         self.trace = trace
         self.log_book_every = log_book_every
-        self.log_bbo_every = log_bbo_every
         self.ask_prices = {s: [0.0] * self.depth for s in symbols}
         self.bid_prices = {s: [0.0] * self.depth for s in symbols}
         self.append_book = append_book
         self.count = 0
+        self.symbol_counts = {s: 0 for s in symbols}
         self.output_directory = output_directory
+        self.convert_to_parquet_every = convert_to_parquet_every
+        self.parquet_flag = parquet_flag
 
     def _on_message(self, ws, message):
         response = json.loads(message)
@@ -200,7 +252,6 @@ class KrakenL2(BaseKrakenWS):
 
                 self._book_checksum(ws, checksum, symbol)
 
-
             else:
                 # Initalize a flag for if a given symbol's book has been updated.
 
@@ -217,14 +268,17 @@ class KrakenL2(BaseKrakenWS):
                     bids = response["data"][0]["bids"]
                     asks = response["data"][0]["asks"]
 
-
                     bqty = [b["qty"] for b in bids]
                     aqty = [a["qty"] for a in asks]
                     new_bids = [
-                        b["price"] for b in bids if b["price"] not in self.bid_prices[symbol]
+                        b["price"]
+                        for b in bids
+                        if b["price"] not in self.bid_prices[symbol]
                     ]
                     new_asks = [
-                        a["price"] for a in asks if a["price"] not in self.ask_prices[symbol]
+                        a["price"]
+                        for a in asks
+                        if a["price"] not in self.ask_prices[symbol]
                     ]
 
                     # Check if we remove any price levels from the book
@@ -264,7 +318,9 @@ class KrakenL2(BaseKrakenWS):
                             pass
                         elif num_bid_levels > self.depth:
                             # Fix: Get the prices to remove as a list instead of a slice
-                            bad_prices = self.bid_prices[symbol][self.depth:]  # Convert slice to list
+                            bad_prices = self.bid_prices[symbol][
+                                self.depth :
+                            ]  # Convert slice to list
                             for bp in bad_prices:
                                 self.bid_prices[symbol].remove(bp)
                                 del self.books[symbol]["bids"][bp]
@@ -298,7 +354,9 @@ class KrakenL2(BaseKrakenWS):
                             pass
                         elif num_ask_levels > self.depth:
                             # Fix: Get the prices to remove as a list instead of a slice
-                            bad_prices = self.ask_prices[symbol][self.depth:]  # Convert slice to list
+                            bad_prices = self.ask_prices[symbol][
+                                self.depth :
+                            ]  # Convert slice to list
                             for bp in bad_prices:
                                 self.ask_prices[symbol].remove(bp)
                                 del self.books[symbol]["asks"][bp]
@@ -307,18 +365,29 @@ class KrakenL2(BaseKrakenWS):
                             raise ValueError(f"MBP Depth is lower than {self.depth}")
 
                 # Sort the self.bids and self.asks by their keys (prices)
-                self.books[symbol]["bids"] = dict(sorted(self.books[symbol]["bids"].items(), reverse=True))
-                self.books[symbol]["asks"] = dict(sorted(self.books[symbol]["asks"].items(), reverse=False))
+                self.books[symbol]["bids"] = dict(
+                    sorted(self.books[symbol]["bids"].items(), reverse=True)
+                )
+                self.books[symbol]["asks"] = dict(
+                    sorted(self.books[symbol]["asks"].items(), reverse=False)
+                )
 
-                # FIXME Add counter for each symbol to consider logging separately.
+
+                # We really do not need to be storing the WHOLE book, but it makes it so that
+                # there is no post-processing to do when we load the data.
+                # FIXME I really should add an option to simply write the change to the book so that
+                # LTS is much more efficient, at the cost of a book reconstruction when loading data.
                 if self.count % self.log_book_every == 0:
                     if self.append_book:
-                        for symbol in self.symbols: 
-
+                        for symbol in self.symbols:
                             if self.updated[symbol]:
+                                self.symbol_counts[symbol] += 1
 
                                 output = True
-                                full_L2_orderbook = {"b": self.books[symbol]["bids"], "a": self.books[symbol]["asks"]}
+                                full_L2_orderbook = {
+                                    "b": self.books[symbol]["bids"],
+                                    "a": self.books[symbol]["asks"],
+                                }
 
                                 aps = list(full_L2_orderbook["a"].keys())
                                 avs = list(full_L2_orderbook["a"].values())
@@ -332,33 +401,62 @@ class KrakenL2(BaseKrakenWS):
 
                                 most_recent_timestamp = len(data) - 1
 
-                                # NOTE TIME MAYBE NOT THE MOST ACCURATE
-                                line = [str(data[most_recent_timestamp]['timestamp'])]
+                                # NOTE TIME MAYBE NOT THE MOST ACCURATE, SHOULD ADD USER LOCAL TIME AS WELL.
+                                line = [str(data[most_recent_timestamp]["timestamp"])]
                                 for i in range(self.depth):
                                     line.extend([aps[i], avs[i], bps[i], bvs[i]])
 
                                 ssymbol = symbol.replace("/", "_")
-                                if not os.path.exists(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"):
-                                    with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "w") as fil:
+                                if not os.path.exists(
+                                    f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"
+                                ):
+                                    with open(
+                                        f"{self.output_directory}/L2_{ssymbol}_orderbook.csv",
+                                        "w",
+                                    ) as fil:
 
-                                        labels=["timestamp"]
+                                        labels = ["timestamp"]
                                         for i in range(self.depth):
-                                            labels.extend(["ap" + str(i), "av" + str(i), "bp" + str(i), "bv" + str(i)])
+                                            labels.extend(
+                                                [
+                                                    "ask_px_" + str(i),
+                                                    "ask_sz_" + str(i),
+                                                    "bid_px_" + str(i),
+                                                    "bid_sz_" + str(i),
+                                                ]
+                                            )
 
                                         fil.write(",".join(labels) + "\n")
                                         fil.write(",".join(line) + "\n")
                                 else:
-                                    with open(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv", "a") as fil:
+                                    with open(
+                                        f"{self.output_directory}/L2_{ssymbol}_orderbook.csv",
+                                        "a",
+                                    ) as fil:
                                         fil.write(",".join(line) + "\n")
 
                             self.updated[symbol] = False
-                    with open(f"{self.output_directory}/L2_live_orderbooks.json", "w") as fil:
+                    with open(
+                        f"{self.output_directory}/L2_live_orderbooks.json", "w"
+                    ) as fil:
                         json.dump(self.books, fil)
                 else:
                     output = False
 
+                for s in self.symbols:
+                    if self.symbol_counts[s] >= self.convert_to_parquet_every and self.parquet_flag:
+                        ssymbol = s.replace("/", "_")
+                        self.symbol_counts[s] = 0
+                        df = pd.read_csv(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+
+                        table = pa.Table.from_pandas(df)
+                        pq.write_to_dataset(table, root_path=f"{self.output_directory}/L2_{ssymbol}_orderbook.parquet")
+
+                        os.remove(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+
 
     def _book_checksum(self, ws, checksum, symbol):
+        # FIXME Check this after writing each parquet.
 
         bid_keys = list(self.books[symbol]["bids"].keys())
         ask_keys = list(self.books[symbol]["asks"].keys())
@@ -374,8 +472,12 @@ class KrakenL2(BaseKrakenWS):
             sap = str(ask_keys[i]).replace(".", "").lstrip("0")
 
             # String bid qty, String bid ask
-            sbq = f"{self.books[symbol]['bids'][bid_keys[i]]:.8f}".replace(".", "").lstrip("0")
-            saq = f"{self.books[symbol]['asks'][ask_keys[i]]:.8f}".replace(".", "").lstrip("0")
+            sbq = f"{self.books[symbol]['bids'][bid_keys[i]]:.8f}".replace(
+                ".", ""
+            ).lstrip("0")
+            saq = f"{self.books[symbol]['asks'][ask_keys[i]]:.8f}".replace(
+                ".", ""
+            ).lstrip("0")
 
             sb = sbp + sbq
             sa = sap + saq
@@ -402,14 +504,13 @@ class KrakenL2(BaseKrakenWS):
         subscription = {
             "method": "subscribe",
             "params": {
-                       "channel": "book",
-                       "symbol": self.symbols,
-                       "depth": self.depth,
-                       },
+                "channel": "book",
+                "symbol": self.symbols,
+                "depth": self.depth,
+            },
         }
 
         ws.send(json.dumps(subscription))
-
 
 class KrakenL3(BaseKrakenWS):
     """
@@ -437,10 +538,12 @@ class KrakenL3(BaseKrakenWS):
         secret_key=None,
         trace=False,
         depth=10,
-        out_file_name="L3_ticks.csv",
+        out_file_name="L3_ticks",
         log_ticks_every=100,
-        log_for_webapp=False,   # FIXME does nothing
-        output_directory="."):
+        log_for_webapp=False,  # FIXME does nothing
+        parquet_flag=True,
+        output_directory=".",
+    ):
         """
         Constructor for the KrakenL3 class.
 
@@ -448,20 +551,29 @@ class KrakenL3(BaseKrakenWS):
         -----------
             symbols: List[str] or str
                 The symbols to subscribe to.
+
             api_key: str
                 The user API key for the Kraken API.
+
             secret_key: str
                 The user secret key for the Kraken API.
+
             trace: bool
                 Whether to trace the websocket messages. Note these heavily clog the stdout.
+
             out_file_name: str
-                The name of the file to log the L3 data to. All symbols are logged to 
+                The name of the file to log the L3 data to. All symbols are logged to
                 the same file.
+                *NOTE* Only supply the FILE PREFIX here, the suffix will be determined, by whether
+                or not the parquet_flag is set to True or False.
+
             log_ticks_every: int
                 The number of incoming ticks before they are batch written to the desired
                 output file.
+
             log_for_webapp: bool
                 Whether to log information for the webapp. [Likely to be deprecated.]
+
             output_directory: str
                 The directory to log the L3 data to.
         """
@@ -477,10 +589,18 @@ class KrakenL3(BaseKrakenWS):
         self.api_secret = secret_key
         self.depth = depth
         self.log_ticks_every = log_ticks_every
-        self.out_file_name = out_file_name
+
+
+
         self.ticks = []
         self.output_directory = output_directory
         self.log_for_webapp = log_for_webapp
+        self.parquet_flag = parquet_flag
+
+        if self.parquet_flag:
+            self.out_file_name = f"{out_file_name}.parquet"
+        else:
+            self.out_file_name = f"{out_file_name}.csv"
 
     def _on_message(self, ws, message):
         response = json.loads(message)
@@ -488,14 +608,32 @@ class KrakenL3(BaseKrakenWS):
         my_time = datetime.datetime.now()
 
         if len(self.ticks) > self.log_ticks_every:
-            if not os.path.exists(f"{self.output_directory}/{self.out_file_name}"):
-                with open(f"{self.output_directory}/{self.out_file_name}", "w") as fil:
-                    fil.write("side,ts_event,ts_recv,price,size,action,order_id,symbol\n")
+
+            remap = {"add":"A", "delete":"C", "modify":"M"}
+
+            for i in range(len(self.ticks)):
+                self.ticks[i][5] = remap[self.ticks[i][5]]
+
+            # Folder of parquet file writing logic. (Much more data efficient.)
+            if self.parquet_flag:
+                columns = ["side","ts_event","ts_recv","price","size","action","order_id","symbol"]
+
+                df = pd.DataFrame(self.ticks, columns=columns)
+                table = pa.Table.from_pandas(df)
+                pq.write_to_dataset(table, root_path=f"{self.output_directory}/{self.out_file_name}")
+
+            # CSV Writing logic.
             else:
-                with open(f"{self.output_directory}/{self.out_file_name}", "a") as fil:
-                    for tick in self.ticks:
-                        tick = [str(t) for t in tick]
-                        fil.write(",".join(tick) + "\n")
+                if not os.path.exists(f"{self.output_directory}/{self.out_file_name}"):
+                    with open(f"{self.output_directory}/{self.out_file_name}", "w") as fil:
+                        fil.write(
+                            "side,ts_event,ts_recv,price,size,action,order_id,symbol\n"
+                        )
+                else:
+                    with open(f"{self.output_directory}/{self.out_file_name}", "a") as fil:
+                        for tick in self.ticks:
+                            tick = [str(t) for t in tick]
+                            fil.write(",".join(tick) + "\n")
             self.ticks = []
             self.tick_count = 0
 
@@ -519,7 +657,7 @@ class KrakenL3(BaseKrakenWS):
                             bid["order_qty"],  # Size
                             bid["event"],  # Action
                             bid["order_id"],  # OID
-                            symbol
+                            symbol,
                         ]
                         self.ticks.append(info)
                         self.tick_count += 1
@@ -533,7 +671,7 @@ class KrakenL3(BaseKrakenWS):
                             ask["order_qty"],  # Size
                             ask["event"],  # Action
                             ask["order_id"],  # OID
-                            symbol
+                            symbol,
                         ]
                         self.ticks.append(info)
                         self.tick_count += 1
@@ -554,15 +692,15 @@ class KrakenL3(BaseKrakenWS):
 
         subscription = {
             "method": "subscribe",
-            "params": {"channel": "level3",
-                       "symbol": self.symbols,
-                       "token": ws_token,
-                       "depth":self.depth
-                       },
+            "params": {
+                "channel": "level3",
+                "symbol": self.symbols,
+                "token": ws_token,
+                "depth": self.depth,
+            },
         }
 
         ws.send(json.dumps(subscription))
-
 
 class KrakenOHLC(BaseKrakenWS):
     """
@@ -601,6 +739,7 @@ class KrakenOHLC(BaseKrakenWS):
         trace=False,
         interval=5,
         output_directory=".",
+        ccxt_snapshot=False,
     ):
         """
         Constructor for the KrakenOHLC class.
@@ -635,13 +774,12 @@ class KrakenOHLC(BaseKrakenWS):
         self.ticks = []
         self.interval = interval
         self.output_directory = output_directory
+        self.ccxt_snapshot = ccxt_snapshot
 
 
     def _on_message(self, ws, message):
         """
         Message handler for the OHLC feed.
-
-
         """
         response = json.loads(message)
 
@@ -651,7 +789,7 @@ class KrakenOHLC(BaseKrakenWS):
 
             # Main case for handling the OHLC data from Kraken
             if response["channel"] == "ohlc":
-                
+
                 if response["type"] == "update":
                     data = response["data"]
                     assert len(data) == 1, "Data longer than expected"
@@ -694,49 +832,51 @@ class KrakenOHLC(BaseKrakenWS):
                         fil.write(",".join(info) + "\n")
 
                 elif response["type"] == "snapshot":
-                    full_data = response["data"]
-                    assert len(full_data) > 1, "Data shorter than expected"
 
-                    info_lines = []
-                    for data in full_data:
-                        symbol = data["symbol"]
-                        open_p = data["open"]
-                        high = data["high"]
-                        low = data["low"]
-                        close = data["close"]
-                        trades = data["trades"]
-                        volume = data["volume"]
-                        vwap = data["vwap"]
-                        tend = data["timestamp"]
-                        tstart = data["interval_begin"]
-                        ttrue = response["timestamp"]
+                    if not self.ccxt_snapshot:
 
-                        info = [
-                            tend,
-                            symbol,
-                            str(open_p),
-                            str(high),
-                            str(low),
-                            str(close),
-                            str(volume),
-                            str(vwap),
-                            str(trades),
-                            tstart,
-                            ttrue,
-                        ]
+                        full_data = response["data"]
+                        assert len(full_data) > 1, "Data shorter than expected"
 
-                        info_lines.append(info)
+                        info_lines = []
+                        for data in full_data:
+                            symbol = data["symbol"]
+                            open_p = data["open"]
+                            high = data["high"]
+                            low = data["low"]
+                            close = data["close"]
+                            trades = data["trades"]
+                            volume = data["volume"]
+                            vwap = data["vwap"]
+                            tend = data["timestamp"]
+                            tstart = data["interval_begin"]
+                            ttrue = response["timestamp"]
 
+                            info = [
+                                tend,
+                                symbol,
+                                str(open_p),
+                                str(high),
+                                str(low),
+                                str(close),
+                                str(volume),
+                                str(vwap),
+                                str(trades),
+                                tstart,
+                                ttrue,
+                            ]
 
-                    for info in info_lines:
-                        if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
-                            with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
-                                fil.write(
-                                    "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
-                                )
-                        else:
-                            with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
-                                fil.write(",".join(info) + "\n")
+                            info_lines.append(info)
+
+                        for info in info_lines:
+                            if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                                with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
+                                    fil.write(
+                                        "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                    )
+                            else:
+                                with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
+                                    fil.write(",".join(info) + "\n")
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
                 pass
@@ -759,6 +899,42 @@ class KrakenOHLC(BaseKrakenWS):
 
         ws.send(json.dumps(subscription))
 
+        # Optionally use CCXT for the historical candles, because they 
+        # provide mode than the snapshot directly from the websocket. 
+        # Take care that these do not have all of the information that 
+        # one can obtain from the websocket (e.g. VWAP)
+        if self.ccxt_snapshot:
+            k = ccxt.kraken()
+            info_lines = []
+            for symbol in self.symbols:
+                candles = k.fetch_ohlcv(symbol, timeframe=f"{self.interval}m")
+                for c in candles:
+                    curr_data = []
+                    ts_raw = c[0]/1000
+                    formatted_timestamp = datetime.datetime.utcfromtimestamp(ts_raw).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+                    curr_data = [formatted_timestamp,
+                                    symbol,
+                                    str(c[1]),                  # open
+                                    str(c[2]),                  # high
+                                    str(c[3]),                  # low
+                                    str(c[4]),                  # close
+                                    str(c[5]),                  # volume
+                                    "NaN",                 # vwap placeholder
+                                    "NaN",                 # trades placeholder
+                                    "NaN",                 # tstart placeholder
+                                    "NaN"]                 # ttrue placeholder
+                    info_lines.append(curr_data)
+
+            for info in info_lines:
+                if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                    with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
+                        fil.write(
+                            "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                        )
+                else:
+                    with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
+                        fil.write(",".join(info) + "\n")
 
 class KrakenTrades(BaseKrakenWS):
     """
@@ -767,8 +943,16 @@ class KrakenTrades(BaseKrakenWS):
     This channel generates a trade event whenever there is an order matched in the book.
     """
 
-    def __init__(self, symbols, api_key=None, secret_key=None, trace=False,
-    log_trades_every=100, output_directory="."):
+    def __init__(
+        self,
+        symbols,
+        api_key=None,
+        secret_key=None,
+        trace=False,
+        log_trades_every=100,
+        output_directory=".",
+        parquet_flag=True,
+    ):
         """
 
         Constructor for the KrakenTrades endpoint.
@@ -781,6 +965,7 @@ class KrakenTrades(BaseKrakenWS):
             trace: bool
             log_trades_every: int
             output_directory: str
+            parquet_flag: bool
         """
 
         if type(symbols) == str:
@@ -792,6 +977,7 @@ class KrakenTrades(BaseKrakenWS):
         self.log_trades_every = log_trades_every
         self.output_directory = output_directory
         self.all_trades = []
+        self.parquet_flag = parquet_flag
 
     def _on_message(self, ws, message):
 
@@ -802,16 +988,18 @@ class KrakenTrades(BaseKrakenWS):
         if "channel" in reponse_keys:
             if response["channel"] == "trade":
                 if response["type"] in ["update", "snapshot"]:
-                    filled_trades = response['data']
+                    filled_trades = response["data"]
                     for trade in filled_trades:
-                        ts_event = trade['timestamp']
-                        symbol = trade['symbol']
-                        price = str(trade['price'])
-                        qty = str(trade['qty'])
-                        side = trade['side']
-                        ord_type = trade['ord_type']
-                        trade_id = str(trade['trade_id'])
-                        self.all_trades.append([ts_event, symbol, price, qty, side, ord_type, trade_id])
+                        ts_event = trade["timestamp"]
+                        symbol = trade["symbol"]
+                        price = trade["price"]
+                        qty = trade["qty"]
+                        side = trade["side"]
+                        ord_type = trade["ord_type"]
+                        trade_id = trade["trade_id"]
+                        self.all_trades.append(
+                            [ts_event, symbol, price, qty, side, ord_type, trade_id]
+                        )
 
                 elif response["type"] == "snapshot":
                     pass
@@ -820,33 +1008,33 @@ class KrakenTrades(BaseKrakenWS):
 
         if len(self.all_trades) >= self.log_trades_every:
 
-            if not os.path.exists(f"{self.output_directory}/trades.csv"):
-                print(f"Writing file {self.output_directory}/trades.csv")
-                with open(f"{self.output_directory}/trades.csv", "w") as fil:
-                    fil.write("ts_event,symbol,price,qty,side,ord_type,trade_id\n")
+            if self.parquet_flag:
+                columns = ["ts_event", "symbol", "price", "qty", "side", "ord_type", "trade_id"]
+                df = pd.DataFrame(self.all_trades, columns=columns)
+                table = pa.Table.from_pandas(df)
+                pq.write_to_dataset(table, root_path=f"{self.output_directory}/trades.parquet")
 
-            with open(f"{self.output_directory}/trades.csv", "a") as fil:
-                for trade in self.all_trades:
-                    fil.write(",".join(trade) + "\n")
+            else:
+                if not os.path.exists(f"{self.output_directory}/trades.csv"):
+                    with open(f"{self.output_directory}/trades.csv", "w") as fil:
+                        fil.write("ts_event,symbol,price,qty,side,ord_type,trade_id\n")
+
+                with open(f"{self.output_directory}/trades.csv", "a") as fil:
+                    for trade in self.all_trades:
+                        fil.write(",".join([str(x) for x in trade]) + "\n")
 
             self.all_trades = []
-
 
     def _on_open(self, ws):
 
         print("Kraken v2 Connection Opened.")
 
         subscription = {
-        "method": "subscribe",
-        "params": {
-            "channel": "trade",
-            "symbol": self.symbols,
-            "snapshot": True
-        }
+            "method": "subscribe",
+            "params": {"channel": "trade", "symbol": self.symbols, "snapshot": True},
         }
 
         ws.send(json.dumps(subscription))
-
 
 class KrakenInstruments(BaseKrakenWS):
     def __init__(self, trace=False, output_directory="."):
@@ -870,11 +1058,25 @@ class KrakenInstruments(BaseKrakenWS):
                 header_assets = assets[0].keys()
 
                 keys = [
-                    "symbol", "base", "quote", "status", "qty_precision", "qty_increment", "price_precision",
-                    "cost_precision", "marginable", "has_index", "cost_min", "margin_initial", "position_limit_long",
-                    "position_limit_short", "tick_size", "price_increment", "qty_min"
+                    "symbol",
+                    "base",
+                    "quote",
+                    "status",
+                    "qty_precision",
+                    "qty_increment",
+                    "price_precision",
+                    "cost_precision",
+                    "marginable",
+                    "has_index",
+                    "cost_min",
+                    "margin_initial",
+                    "position_limit_long",
+                    "position_limit_short",
+                    "tick_size",
+                    "price_increment",
+                    "qty_min",
                 ]
-                
+
                 pair_info = []
                 for pair in pairs:
                     for key in keys:
@@ -885,16 +1087,15 @@ class KrakenInstruments(BaseKrakenWS):
 
                 asset_info = [[str(x) for x in a.values()] for a in assets]
 
-                with open(f'{self.output_directory}/kraken_pairs.csv', 'w') as fil:
-                    fil.write(','.join(keys) + '\n')
+                with open(f"{self.output_directory}/kraken_pairs.csv", "w") as fil:
+                    fil.write(",".join(keys) + "\n")
                     for line in pair_info:
-                        fil.write(','.join(line) + '\n')
+                        fil.write(",".join(line) + "\n")
 
-                with open(f'{self.output_directory}/kraken_assets.csv', 'w') as fil:
-                    fil.write(','.join(header_assets) + '\n')
+                with open(f"{self.output_directory}/kraken_assets.csv", "w") as fil:
+                    fil.write(",".join(header_assets) + "\n")
                     for line in asset_info:
-                        fil.write(','.join(line) + '\n')
-
+                        fil.write(",".join(line) + "\n")
 
                 ws.close()
                 exit(1)
@@ -906,8 +1107,8 @@ class KrakenInstruments(BaseKrakenWS):
 
         subscription = {
             "method": "subscribe",
-            "params": { "channel": "instrument" },
-            "req_id": 79 
-            }
+            "params": {"channel": "instrument"},
+            "req_id": 79,
+        }
 
         ws.send(json.dumps(subscription))
