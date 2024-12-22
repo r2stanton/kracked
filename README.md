@@ -59,6 +59,8 @@ price data, spread, and any entries/exits associated wtih algorithmic trading st
 element is subject to potentially being moved to its own package at some point if it can be
 sufficiently well generalized to different data sources. 
 
+**WARNING** To those using the webapp, it is not yet setup to work with the parquet IO changes.
+
 ### Structure currently of the code base:
 ```
 ├── LICENSE
