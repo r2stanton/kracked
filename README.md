@@ -71,13 +71,7 @@ sufficiently well generalized to different data sources.
 │   ├── L3_example.py
 │   ├── OHLC_example.py
 │   ├── ex_multifeed_out
-│   │   ├── L2_BTC_USD_orderbook.csv
-│   │   ├── L2_DOGE_USD_orderbook.csv
-│   │   ├── L2_ETH_USD_orderbook.csv
-│   │   ├── L2_SOL_USD_orderbook.csv
-│   │   ├── L2_live_orderbooks.json
-│   │   ├── L3_ticks.csv
-│   │   ├── OHLC.csv
+│   │   ├── ...
 │   ├── ex_out
 │   │   ├── L1.csv
 │   │   ├── L2_BTC_USD_orderbook.csv
