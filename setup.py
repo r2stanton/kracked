@@ -16,7 +16,7 @@ setup(
     packages=find_packages(),
 
     install_requires=['numpy', 'pandas', 'ccxt',
-                      'websockets', 'toml', 'pyarrow'],
+                      'websocket-client', 'toml', 'pyarrow'],
 
     keywords=['cryptocurrency', 'crypto', 'algorithmic trading', 'quantitative finance',
               'exchange', 'Kraken'],
