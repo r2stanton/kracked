@@ -1,11 +1,26 @@
 import warnings
 import sqlite3
 import os
-
+from typing import List, Any
 
 class KrackedDB:
 
-    def __init__(self, db_name: str = "kracked_outputs.db", overwrite: bool = False):
+    def __init__(self,
+                 db_name: str = "kracked_outputs.db",
+                 overwrite: bool = False,
+                 ):
+        """
+            This class handles I/O with the SQLite database.
+
+            Parameters
+            ----------
+            db_name: str
+                The name of the database to create.
+            overwrite: bool
+                Whether to overwrite the database if it already exists. Default is False.
+
+        """
+        self.db_name = db_name
 
         if os.path.exists(db_name):
             if overwrite:
@@ -13,9 +28,22 @@ class KrackedDB:
             else:
                 warnings.warn(f"Database {db_name} already exists. Set overwrite=True to overwrite.")
 
-        self.conn = sqlite3.connect(db_name)
-        self.cur = self.conn.cursor()
 
+    def connect(self):
+        """
+        Connect to the database. Set the cur and con attributes of the class instance.
+        """
+        self.con = sqlite3.connect(self.db_name)
+        self.cur = self.con.cursor()
+
+    def safe_disconnect(self):
+        """
+        Safely disconnect from the database, after committing changes.
+        """
+        self.con.commit()
+        self.con.close()
+        self.cur = None
+        self.con = None
 
     def _check_table_exists(self, table_name: str, depth: int=None) -> bool:
         """
@@ -33,7 +61,7 @@ class KrackedDB:
         self.cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
         return self.cur.fetchone() is not None
 
-    def _create_table(self, table_name: str):
+    def create_table(self, table_name: str) -> None:
 
         valids = ["L1", "L2", "L3", "OHLC", "trades"]
         if table_name not in valids:
@@ -72,7 +100,7 @@ class KrackedDB:
                     "ask_sz_" + str(i),
                     "bid_px_" + str(i),
                     "bid_sz_" + str(i),
-                ]
+                ])
 
             self.cur.execute(f"CREATE TABLE IF NOT EXISTS L2 (timestamp, {', '.join(columns)})")    
         
@@ -94,6 +122,7 @@ class KrackedDB:
 
             self.cur.execute("""CREATE TABLE IF NOT EXISTS OHLC (
                                 timestamp text,
+                                symbol text,
                                 open numeric,
                                 high numeric,
                                 low numeric,
@@ -108,7 +137,7 @@ class KrackedDB:
 
         elif table_name == "trades":
 
-            self.cur.execute("""CREATE TABLE IF NOT EXISTS OHLC (
+            self.cur.execute("""CREATE TABLE IF NOT EXISTS trades (
                                 ts_event text,
                                 symbol text,
                                 price numeric,
@@ -117,4 +146,34 @@ class KrackedDB:
                                 ord_type text,
                                 trade_id numeric
             )""")
-        
+
+
+    def write_trades(self, trade_data: List[Any]) -> None:
+
+        """
+        Write trades data to the database.
+
+        Parameters
+        ----------
+        trade_data (List[Any]): The trades data to write.
+ 
+        """
+        self.cur.executemany("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?)", trade_data)
+        self.con.commit()
+
+    def write_ohlc(self, ohlc_data: List[Any], mode: str) -> None:
+
+        """
+        Write OHLC data to the database.
+
+        Parameters
+        ----------
+        ohlc_data (List[Any]): The OHLC data to write.
+        mode (str): The mode to write the data in.
+        """
+
+        if mode == "snapshot":
+            self.cur.executemany("INSERT INTO OHLC VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ohlc_data)
+        elif mode == "update":
+            self.cur.execute("INSERT INTO OHLC VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ohlc_data)
+    
