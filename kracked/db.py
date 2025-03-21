@@ -1,7 +1,7 @@
 import warnings
 import sqlite3
 import os
-from typing import List, Any
+from typing import List, Any, Union
 
 class KrackedDB:
 
@@ -61,7 +61,7 @@ class KrackedDB:
         self.cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
         return self.cur.fetchone() is not None
 
-    def create_table(self, table_name: str) -> None:
+    def create_table(self, table_name: str, depth: Union[None, int] = None) -> None:
 
         valids = ["L1", "L2", "L3", "OHLC", "trades"]
         if table_name not in valids:
@@ -102,7 +102,7 @@ class KrackedDB:
                     "bid_sz_" + str(i),
                 ])
 
-            self.cur.execute(f"CREATE TABLE IF NOT EXISTS L2 (timestamp, {', '.join(columns)})")    
+            self.cur.execute(f"CREATE TABLE IF NOT EXISTS L2 ({', '.join(columns)})")    
         
         elif table_name == "L3":
 
@@ -147,6 +147,38 @@ class KrackedDB:
                                 trade_id numeric
             )""")
 
+    def write_L2(self, l2_data: List[Any], depth) -> None:
+
+        """
+        Write L2 data to the database.
+
+        Parameters
+        ----------
+        l2_data (List[Any]): The L2 data to write.
+        depth (int): The depth of the L2 data.
+        """
+
+        # Ensures the raw code we're going to f-string into an SQL query is valid,
+        # and not some potentially problematic SQL code.
+        if not isinstance(depth, int):
+            raise ValueError("Depth must be an integer.")
+
+        # We need 4 SQL place holders for each depth level, and one for the timestamp.
+        placeholder = ["?"]*(depth*4+1)
+
+        self.cur.execute(f"INSERT INTO L2 VALUES ({','.join(placeholder)})", l2_data)
+
+    def write_L3(self, l3_data: List[Any]) -> None:
+
+        """
+        Write L3 data to the database.
+
+        Parameters
+        ----------
+        l3_data (List[Any]): The L3 data to write.  
+
+        """
+        self.cur.executemany("INSERT INTO L3 VALUES (?, ?, ?, ?, ?, ?, ?, ?)", l3_data)
 
     def write_trades(self, trade_data: List[Any]) -> None:
 
@@ -159,7 +191,6 @@ class KrackedDB:
  
         """
         self.cur.executemany("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?)", trade_data)
-        self.con.commit()
 
     def write_ohlc(self, ohlc_data: List[Any], mode: str) -> None:
 
