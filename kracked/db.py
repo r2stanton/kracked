@@ -72,10 +72,10 @@ class KrackedDB:
                                 timestamp text,
                                 symbol text,
                                 bid numeric,
-                                bid_qty, numeric,
-                                ask, numeric,
+                                bid_qty numeric,
+                                ask numeric,
                                 ask_qty numeric,
-                                last, numeric,
+                                last numeric,
                                 volume numeric,
                                 vwap numeric,
                                 low numeric,
@@ -119,7 +119,7 @@ class KrackedDB:
                             """)
 
         elif table_name == "OHLC":
-
+            print('making OHLC table')
             self.cur.execute("""CREATE TABLE IF NOT EXISTS OHLC (
                                 timestamp text,
                                 symbol text,
@@ -147,7 +147,18 @@ class KrackedDB:
                                 trade_id numeric
             )""")
 
-    def write_L2(self, l2_data: List[Any], depth) -> None:
+    def write_L1(self, l1_data: List[Any]) -> None:
+        """
+        Write L1 data to the database.
+
+        Parameters
+        ----------
+        l1_data (List[Any]): The L1 data to write.
+        """ 
+
+        self.cur.executemany("INSERT INTO L1 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", l1_data)
+
+    def write_L2(self, l2_data: List[Any], depth: int) -> None:
 
         """
         Write L2 data to the database.
@@ -167,6 +178,7 @@ class KrackedDB:
         placeholder = ["?"]*(depth*4+1)
 
         self.cur.execute(f"INSERT INTO L2 VALUES ({','.join(placeholder)})", l2_data)
+
 
     def write_L3(self, l3_data: List[Any]) -> None:
 
