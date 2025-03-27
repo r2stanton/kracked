@@ -433,6 +433,8 @@ class KrakenL2(BaseKrakenWS):
 
                                 ssymbol = symbol.replace("/", "_")
 
+                                # Both CSV and the Parquet mode temporarily write things to CSV, so we only care
+                                # if the current mode is not SQL (where no intermediary files are needed.)
                                 if self.output_mode != "sql":
                                     if not os.path.exists(
                                         f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"
@@ -461,10 +463,12 @@ class KrakenL2(BaseKrakenWS):
                                             "a",
                                         ) as fil:
                                             fil.write(",".join(line) + "\n")
-                                else:
+                                elif self.output_mode == "sql":
                                     self.db.connect()
                                     self.db.write_L2(line, self.depth)
                                     self.db.safe_disconnect()
+                                else:
+                                    raise NotImplementedError("Output mode not implemented, select csv, parquet, or sql.")
 
                             self.updated[symbol] = False
 
@@ -475,21 +479,25 @@ class KrakenL2(BaseKrakenWS):
                         ) as fil:
                             json.dump(self.books, fil)
 
+
                 else:
                     output = False
 
-
-                if self.output_mode != "sql":
+                if self.output_mode == "parquet":
                     for s in self.symbols:
-                        if self.symbol_counts[s] >= self.convert_to_parquet_every and self.parquet_flag:
+                        # If the symbol has stored enough data, we convert it to parquet.
+                        # Symbol counts is the number of updates to a given symnbol since the last parquet conversion.
+                        if self.symbol_counts[s] >= self.convert_to_parquet_every:
                             ssymbol = s.replace("/", "_")
-                        self.symbol_counts[s] = 0
-                        df = pd.read_csv(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+                            self.symbol_counts[s] = 0
+                            df = pd.read_csv(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
 
-                        table = pa.Table.from_pandas(df)
-                        pq.write_to_dataset(table, root_path=f"{self.output_directory}/L2_{ssymbol}_orderbook.parquet")
+                            table = pa.Table.from_pandas(df)
+                            pq.write_to_dataset(table, root_path=f"{self.output_directory}/L2_{ssymbol}_orderbook.parquet")
 
-                        os.remove(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+                            os.remove(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+
+
 
 
     def _book_checksum(self, ws, checksum, symbol):
