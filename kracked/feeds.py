@@ -21,12 +21,25 @@ class KrakenL1(BaseKrakenWS):
 
     def __init__(
         self,
-        symbols,
-        api_key=None,
-        secret_key=None,
-        trace=False,
-        output_directory=".",
+        symbols: Union[List[str], str],
+        api_key: str = None,
+        secret_key: str = None,
+        trace: bool = False,
+        output_directory: str = ".",
+        output_mode: str = "sql",
+        db_name: str ="kracked_outputs.db"
     ):
+        """
+        Constructor for the KrakenL1 class.
+
+        Parameters
+        ----------
+
+        symbols: List[str] or str
+            The symbols to subscribe to.
+        output_mode: str (default="sql")
+            The mode to output the data in. Acceptable values are "csv", "parquet", and "sql".  
+        """
 
         if type(symbols) == str:
             symbols = [symbols]
@@ -35,6 +48,20 @@ class KrakenL1(BaseKrakenWS):
         self.auth = False
         self.trace = trace
         self.output_directory = output_directory
+        self.output_mode = output_mode
+        self.db_name = db_name
+
+        if self.output_mode == "sql":
+            self.db = KrackedDB(db_name=f"{self.output_directory}/{self.db_name}") 
+
+            # Connect to the database.
+            self.db.connect()
+
+            # Create the table.
+            self.db.create_table("L1")
+
+            # Disconnect from the database.
+            self.db.safe_disconnect()
 
     def _on_error(self, ws, error):
         print("Error in L1 Feed")
@@ -94,16 +121,31 @@ class KrakenL1(BaseKrakenWS):
 
                         info_lines.append(info)
 
-                    for info in info_lines:
-                        if not os.path.exists(f"{self.output_directory}/L1.csv"):
-                            with open(f"{self.output_directory}/L1.csv", "w") as fil:
-                                fil.write(
-                                    "timestamp,symbol,bid,bid_qty,ask,ask_qty,last,volume,vwap,low,high,change,change_pct\n"
-                                )
-                                fil.write(",".join(info) + "\n")
-                        else:
-                            with open(f"{self.output_directory}/L1.csv", "a") as fil:
-                                fil.write(",".join(info) + "\n")
+                    if self.output_mode == "csv":
+                        for info in info_lines:
+                                if not os.path.exists(f"{self.output_directory}/L1.csv"):
+                                    with open(f"{self.output_directory}/L1.csv", "w") as fil:
+                                        fil.write(
+                                            "timestamp,symbol,bid,bid_qty,ask,ask_qty,last,volume,vwap,low,high,change,change_pct\n"
+                                        )
+                                        fil.write(",".join(info) + "\n")
+                                else:
+                                    with open(f"{self.output_directory}/L1.csv", "a") as fil:
+                                        fil.write(",".join(info) + "\n")
+                    elif self.output_mode == "sql":
+
+                        # Connect to the database.
+                        self.db.connect()
+
+                        # Write the data to the database.
+                        self.db.write_L1(info_lines)
+
+                        # Disconnect from the database.
+                        self.db.safe_disconnect()
+
+                    else:
+                        raise NotImplementedError("Output mode not implemented, select csv or sql.")
+
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
                 pass
@@ -856,6 +898,8 @@ class KrakenOHLC(BaseKrakenWS):
         self.ccxt_snapshot = ccxt_snapshot
 
         self.output_mode = output_mode
+
+        print("Here :*")
 
         # Initialize the database connection.
         if output_mode == "sql":
