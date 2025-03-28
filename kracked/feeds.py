@@ -1,12 +1,17 @@
 from kracked.core import BaseKrakenWS
+from kracked.db import KrackedDB
+
 from zlib import crc32 as CRC32
+
 import numpy as np
 import toml, json, os
 import datetime
 import ccxt, time
 import pandas as pd
+
 import pyarrow.parquet as pq
 import pyarrow as pa
+from typing import Union, List
 
 
 class KrakenL1(BaseKrakenWS):
@@ -16,12 +21,25 @@ class KrakenL1(BaseKrakenWS):
 
     def __init__(
         self,
-        symbols,
-        api_key=None,
-        secret_key=None,
-        trace=False,
-        output_directory=".",
+        symbols: Union[List[str], str],
+        api_key: str = None,
+        secret_key: str = None,
+        trace: bool = False,
+        output_directory: str = ".",
+        output_mode: str = "sql",
+        db_name: str ="kracked_outputs.db"
     ):
+        """
+        Constructor for the KrakenL1 class.
+
+        Parameters
+        ----------
+
+        symbols: List[str] or str
+            The symbols to subscribe to.
+        output_mode: str (default="sql")
+            The mode to output the data in. Acceptable values are "csv", "parquet", and "sql".  
+        """
 
         if type(symbols) == str:
             symbols = [symbols]
@@ -30,6 +48,20 @@ class KrakenL1(BaseKrakenWS):
         self.auth = False
         self.trace = trace
         self.output_directory = output_directory
+        self.output_mode = output_mode
+        self.db_name = db_name
+
+        if self.output_mode == "sql":
+            self.db = KrackedDB(db_name=f"{self.output_directory}/{self.db_name}") 
+
+            # Connect to the database.
+            self.db.connect()
+
+            # Create the table.
+            self.db.create_table("L1")
+
+            # Disconnect from the database.
+            self.db.safe_disconnect()
 
     def _on_error(self, ws, error):
         print("Error in L1 Feed")
@@ -89,16 +121,31 @@ class KrakenL1(BaseKrakenWS):
 
                         info_lines.append(info)
 
-                    for info in info_lines:
-                        if not os.path.exists(f"{self.output_directory}/L1.csv"):
-                            with open(f"{self.output_directory}/L1.csv", "w") as fil:
-                                fil.write(
-                                    "timestamp,symbol,bid,bid_qty,ask,ask_qty,last,volume,vwap,low,high,change,change_pct\n"
-                                )
-                                fil.write(",".join(info) + "\n")
-                        else:
-                            with open(f"{self.output_directory}/L1.csv", "a") as fil:
-                                fil.write(",".join(info) + "\n")
+                    if self.output_mode == "csv":
+                        for info in info_lines:
+                                if not os.path.exists(f"{self.output_directory}/L1.csv"):
+                                    with open(f"{self.output_directory}/L1.csv", "w") as fil:
+                                        fil.write(
+                                            "timestamp,symbol,bid,bid_qty,ask,ask_qty,last,volume,vwap,low,high,change,change_pct\n"
+                                        )
+                                        fil.write(",".join(info) + "\n")
+                                else:
+                                    with open(f"{self.output_directory}/L1.csv", "a") as fil:
+                                        fil.write(",".join(info) + "\n")
+                    elif self.output_mode == "sql":
+
+                        # Connect to the database.
+                        self.db.connect()
+
+                        # Write the data to the database.
+                        self.db.write_L1(info_lines)
+
+                        # Disconnect from the database.
+                        self.db.safe_disconnect()
+
+                    else:
+                        raise NotImplementedError("Output mode not implemented, select csv or sql.")
+
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
                 pass
@@ -126,16 +173,18 @@ class KrakenL2(BaseKrakenWS):
 
     def __init__(
         self,
-        symbols,
-        api_key=None,
-        secret_key=None,
-        trace=False,
-        output_directory=".",
-        depth=10,
-        log_book_every=1,
-        append_book=True,
-        convert_to_parquet_every=1000,
-        parquet_flag=True
+        symbols: Union[List[str], str],
+        api_key: str = None,
+        secret_key: str = None,
+        trace: bool = False,
+        output_directory: str = ".",
+        depth: int = 10,
+        log_book_every: int = 1,
+        append_book: bool = True,
+        convert_to_parquet_every: int = 1000,
+        log_for_webapp: bool = False,
+        output_mode: str = "parquet",
+        db_name: str = "kracked_outputs.db",
     ):
         """
         Constructor for the KrakenL2 class.
@@ -181,8 +230,12 @@ class KrakenL2(BaseKrakenWS):
         convert_to_parquet_every: int (default=1000)
             The number of updates to log before converting the book to parquet.
             *NOTE* This process REMOVES the corresponding CSV file.
-        do_parquet: bool
-            Whether to convert the book to parquet.
+
+        output_mode: str (default="parquet")
+            The mode to output the data in. Acceptable values are "csv", "parquet", and "sql".
+
+        db_name: str (default="kracked_outputs.db")
+            The name of the database to use.
         """
 
         assert depth in [
@@ -210,7 +263,21 @@ class KrakenL2(BaseKrakenWS):
         self.symbol_counts = {s: 0 for s in symbols}
         self.output_directory = output_directory
         self.convert_to_parquet_every = convert_to_parquet_every
-        self.parquet_flag = parquet_flag
+        self.output_mode = output_mode
+        self.db_name = db_name
+        self.log_for_webapp = log_for_webapp
+
+        if self.output_mode == "sql":
+            self.db = KrackedDB(db_name=f"{self.output_directory}/{db_name}") 
+
+            # Connect to the database.
+            self.db.connect()
+
+            # Create the table.
+            self.db.create_table("L2", self.depth)
+
+            # Disconnect from the database.
+            self.db.safe_disconnect()
 
     def _on_message(self, ws, message):
         response = json.loads(message)
@@ -375,7 +442,7 @@ class KrakenL2(BaseKrakenWS):
 
                 # We really do not need to be storing the WHOLE book, but it makes it so that
                 # there is no post-processing to do when we load the data.
-                # FIXME I really should add an option to simply write the change to the book so that
+                # NOTE I really should add an option to simply write the change to the book so that
                 # LTS is much more efficient, at the cost of a book reconstruction when loading data.
                 if self.count % self.log_book_every == 0:
                     if self.append_book:
@@ -407,52 +474,76 @@ class KrakenL2(BaseKrakenWS):
                                     line.extend([aps[i], avs[i], bps[i], bvs[i]])
 
                                 ssymbol = symbol.replace("/", "_")
-                                if not os.path.exists(
-                                    f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"
-                                ):
-                                    with open(
-                                        f"{self.output_directory}/L2_{ssymbol}_orderbook.csv",
-                                        "w",
-                                    ) as fil:
 
-                                        labels = ["timestamp"]
-                                        for i in range(self.depth):
-                                            labels.extend(
-                                                [
-                                                    "ask_px_" + str(i),
-                                                    "ask_sz_" + str(i),
-                                                    "bid_px_" + str(i),
-                                                    "bid_sz_" + str(i),
-                                                ]
-                                            )
+                                # Both CSV and the Parquet mode temporarily write things to CSV, so we only care
+                                # if the current mode is not SQL (where no intermediary files are needed.)
+                                if self.output_mode != "sql":
+                                    if not os.path.exists(
+                                        f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"
+                                    ):
+                                        with open(
+                                            f"{self.output_directory}/L2_{ssymbol}_orderbook.csv",
+                                            "w",
+                                        ) as fil:
 
-                                        fil.write(",".join(labels) + "\n")
-                                        fil.write(",".join(line) + "\n")
+                                            labels = ["timestamp"]
+                                            for i in range(self.depth):
+                                                labels.extend(
+                                                    [
+                                                        "ask_px_" + str(i),
+                                                        "ask_sz_" + str(i),
+                                                        "bid_px_" + str(i),
+                                                        "bid_sz_" + str(i),
+                                                    ]
+                                                )
+
+                                            fil.write(",".join(labels) + "\n")
+                                            fil.write(",".join(line) + "\n")
+                                    else:
+                                        with open(
+                                            f"{self.output_directory}/L2_{ssymbol}_orderbook.csv",
+                                            "a",
+                                        ) as fil:
+                                            fil.write(",".join(line) + "\n")
+                                elif self.output_mode == "sql":
+
+                                    # When writing to the SQL database, we store all books in the same table, 
+                                    # so we need to add the symbol to the line.
+                                    line.insert(0, symbol)
+                                    self.db.connect()
+                                    self.db.write_L2(line, self.depth)
+                                    self.db.safe_disconnect()
                                 else:
-                                    with open(
-                                        f"{self.output_directory}/L2_{ssymbol}_orderbook.csv",
-                                        "a",
-                                    ) as fil:
-                                        fil.write(",".join(line) + "\n")
+                                    raise NotImplementedError("Output mode not implemented, select csv, parquet, or sql.")
 
                             self.updated[symbol] = False
-                    with open(
-                        f"{self.output_directory}/L2_live_orderbooks.json", "w"
-                    ) as fil:
-                        json.dump(self.books, fil)
+
+                    # Used for visualization in the webapp.
+                    if self.log_for_webapp:
+                        with open(
+                            f"{self.output_directory}/L2_live_orderbooks.json", "w"
+                        ) as fil:
+                            json.dump(self.books, fil)
+
+
                 else:
                     output = False
 
-                for s in self.symbols:
-                    if self.symbol_counts[s] >= self.convert_to_parquet_every and self.parquet_flag:
-                        ssymbol = s.replace("/", "_")
-                        self.symbol_counts[s] = 0
-                        df = pd.read_csv(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+                if self.output_mode == "parquet":
+                    for s in self.symbols:
+                        # If the symbol has stored enough data, we convert it to parquet.
+                        # Symbol counts is the number of updates to a given symnbol since the last parquet conversion.
+                        if self.symbol_counts[s] >= self.convert_to_parquet_every:
+                            ssymbol = s.replace("/", "_")
+                            self.symbol_counts[s] = 0
+                            df = pd.read_csv(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
 
-                        table = pa.Table.from_pandas(df)
-                        pq.write_to_dataset(table, root_path=f"{self.output_directory}/L2_{ssymbol}_orderbook.parquet")
+                            table = pa.Table.from_pandas(df)
+                            pq.write_to_dataset(table, root_path=f"{self.output_directory}/L2_{ssymbol}_orderbook.parquet")
 
-                        os.remove(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+                            os.remove(f"{self.output_directory}/L2_{ssymbol}_orderbook.csv")
+
+
 
 
     def _book_checksum(self, ws, checksum, symbol):
@@ -533,16 +624,16 @@ class KrakenL3(BaseKrakenWS):
 
     def __init__(
         self,
-        symbols,
-        api_key=None,
-        secret_key=None,
-        trace=False,
-        depth=10,
-        out_file_name="L3_ticks",
-        log_ticks_every=100,
-        log_for_webapp=False,  # FIXME does nothing
-        parquet_flag=True,
-        output_directory=".",
+        symbols: Union[List[str], str],
+        api_key: str,
+        secret_key: str,
+        trace: bool = False,
+        depth: int = 10,
+        out_file_name: str = "L3_ticks",
+        log_ticks_every: int = 100,
+        output_directory: str = ".",
+        output_mode: str = "parquet",
+        db_name: str = "kracked_outputs.db",
     ):
         """
         Constructor for the KrakenL3 class.
@@ -571,11 +662,11 @@ class KrakenL3(BaseKrakenWS):
                 The number of incoming ticks before they are batch written to the desired
                 output file.
 
-            log_for_webapp: bool
-                Whether to log information for the webapp. [Likely to be deprecated.]
-
             output_directory: str
                 The directory to log the L3 data to.
+
+            output_mode: str
+                The mode to output the data in. Acceptable values are "csv", "parquet", and "sql".
         """
 
         self.tick_count = 0
@@ -590,17 +681,32 @@ class KrakenL3(BaseKrakenWS):
         self.depth = depth
         self.log_ticks_every = log_ticks_every
 
-
-
         self.ticks = []
         self.output_directory = output_directory
-        self.log_for_webapp = log_for_webapp
-        self.parquet_flag = parquet_flag
+        self.output_mode = output_mode
 
-        if self.parquet_flag:
+        if self.output_mode == "parquet":
+
             self.out_file_name = f"{out_file_name}.parquet"
-        else:
+
+        elif self.output_mode == "csv":
+
             self.out_file_name = f"{out_file_name}.csv"
+
+        elif self.output_mode == "sql":
+
+            self.db = KrackedDB(db_name=f"{self.output_directory}/{db_name}")   
+
+            # Connect   
+            self.db.connect()
+
+            # Create the table.
+            self.db.create_table("L3")
+
+            # Disconnect
+            self.db.safe_disconnect()
+        else:
+            raise NotImplementedError("Output mode not implemented, select csv, parquet, or sql.")
 
     def _on_message(self, ws, message):
         response = json.loads(message)
@@ -615,15 +721,14 @@ class KrakenL3(BaseKrakenWS):
                 self.ticks[i][5] = remap[self.ticks[i][5]]
 
             # Folder of parquet file writing logic. (Much more data efficient.)
-            if self.parquet_flag:
+            if self.output_mode == "parquet":
                 columns = ["side","ts_event","ts_recv","price","size","action","order_id","symbol"]
 
                 df = pd.DataFrame(self.ticks, columns=columns)
                 table = pa.Table.from_pandas(df)
                 pq.write_to_dataset(table, root_path=f"{self.output_directory}/{self.out_file_name}")
-
-            # CSV Writing logic.
-            else:
+            
+            elif self.output_mode == "csv":
                 if not os.path.exists(f"{self.output_directory}/{self.out_file_name}"):
                     with open(f"{self.output_directory}/{self.out_file_name}", "w") as fil:
                         fil.write(
@@ -634,6 +739,14 @@ class KrakenL3(BaseKrakenWS):
                         for tick in self.ticks:
                             tick = [str(t) for t in tick]
                             fil.write(",".join(tick) + "\n")
+
+            elif self.output_mode == "sql":
+                self.db.connect()
+                self.db.write_L3(self.ticks)
+                self.db.safe_disconnect()
+            else:
+                raise NotImplementedError("Output mode not implemented, select csv, parquet, or sql.")
+
             self.ticks = []
             self.tick_count = 0
 
@@ -735,11 +848,13 @@ class KrakenOHLC(BaseKrakenWS):
 
     def __init__(
         self,
-        symbols,
-        trace=False,
-        interval=5,
-        output_directory=".",
-        ccxt_snapshot=False,
+        symbols: Union[List[str], str],
+        trace: bool = False,
+        interval: int = 5,
+        output_directory: str = ".",
+        ccxt_snapshot: bool = False,
+        output_mode: str = "csv",
+        db_name: str = "kracked_outputs.db",
     ):
         """
         Constructor for the KrakenOHLC class.
@@ -755,6 +870,16 @@ class KrakenOHLC(BaseKrakenWS):
                 [1, 5, 15, 30, 60, 240, 1440, 10080, 21600].
             output_directory: str
                 The directory to log the OHLC data to.
+            ccxt_snapshot: bool
+                Whether to use the CCXT snapshot method. If true, it uses CCXT to get the snapshot data, because it uses
+                the REST API, which has a further lookback period then the Websocket API. Eventually I may implement the 
+                REST API myself to avoid the dependency, but for now this suffices.
+            output_mode: str
+                The mode to output the data in. Acceptable values are "csv" and "sql". There is really no point in using
+                parquets with the OHLCs, because the data is so infrequently updated, and it makes the most sense to write
+                it on every entry.
+            db_name: str
+                The name of the database to use.
         """
 
         all_int = [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]
@@ -776,6 +901,24 @@ class KrakenOHLC(BaseKrakenWS):
         self.output_directory = output_directory
         self.ccxt_snapshot = ccxt_snapshot
 
+        self.output_mode = output_mode
+
+        print("Here :*")
+
+        # Initialize the database connection.
+        if output_mode == "sql":
+
+            # Initialize the database, optionally overwrite if it exists (default does not do this).
+            self.db = KrackedDB(db_name=f"{self.output_directory}/{db_name}")
+
+            # Connect
+            self.db.connect()
+
+            # Create the table.
+            self.db.create_table("OHLC")
+
+            # Disconnect
+            self.db.safe_disconnect()
 
     def _on_message(self, ws, message):
         """
@@ -821,15 +964,26 @@ class KrakenOHLC(BaseKrakenWS):
                         ttrue,
                     ]
 
-                    if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                    if self.output_mode == "csv":
+                        if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                            with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
+                                fil.write(
+                                    "timestamp,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                )
+                                fil.write(",".join(info) + "\n")
+
                         with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
-                            fil.write(
-                                "timestamp,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
-                            )
                             fil.write(",".join(info) + "\n")
 
-                    with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
-                        fil.write(",".join(info) + "\n")
+                    elif self.output_mode == "sql":
+                        self.db.connect()
+                        self.db.write_ohlc(info, mode="update")
+                        self.db.safe_disconnect()
+
+                    else: 
+                        print(self.output_mode)
+                        raise NotImplementedError("Output mode not implemented, select csv or sql.")
+
 
                 elif response["type"] == "snapshot":
 
@@ -868,15 +1022,23 @@ class KrakenOHLC(BaseKrakenWS):
 
                             info_lines.append(info)
 
-                        for info in info_lines:
-                            if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
-                                with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
-                                    fil.write(
-                                        "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
-                                    )
-                            else:
-                                with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
-                                    fil.write(",".join(info) + "\n")
+                        if self.output_mode == "csv":
+                            for info in info_lines:
+                                if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                                    with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
+                                        fil.write(
+                                            "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                                        )
+                                else:
+                                    with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
+                                        fil.write(",".join(info) + "\n")
+
+                        elif self.output_mode == "sql":
+                            self.db.connect()
+                            self.db.write_ohlc(info_lines, mode="snapshot")
+                            self.db.safe_disconnect()
+
+
 
             elif response["channel"] in ["heartbeat", "status", "subscribe"]:
                 pass
@@ -926,15 +1088,24 @@ class KrakenOHLC(BaseKrakenWS):
                                     "NaN"]                 # ttrue placeholder
                     info_lines.append(curr_data)
 
-            for info in info_lines:
-                if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
-                    with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
-                        fil.write(
-                            "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
-                        )
-                else:
-                    with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
-                        fil.write(",".join(info) + "\n")
+            if self.output_mode == "csv":
+                for info in info_lines:
+                    if not os.path.exists(f"{self.output_directory}/OHLC.csv"):
+                        with open(f"{self.output_directory}/OHLC.csv", "w") as fil:
+                            fil.write(
+                                "timestamp,symbol,open,high,low,close,volume,vwap,trades,tstart,ttrue\n"
+                            )
+                    else:
+                        with open(f"{self.output_directory}/OHLC.csv", "a") as fil:
+                            fil.write(",".join(info) + "\n")
+
+            elif self.output_mode == "sql":
+                self.db.connect()
+                self.db.write_ohlc(info_lines, mode="snapshot")
+                self.db.safe_disconnect()
+
+            else:
+                raise NotImplementedError("Output mode not implemented, select csv or sql.")
 
 class KrakenTrades(BaseKrakenWS):
     """
@@ -946,12 +1117,11 @@ class KrakenTrades(BaseKrakenWS):
     def __init__(
         self,
         symbols,
-        api_key=None,
-        secret_key=None,
         trace=False,
         log_trades_every=100,
         output_directory=".",
-        parquet_flag=True,
+        output_mode="parquet",
+        db_name="kracked_outputs.db",
     ):
         """
 
@@ -960,12 +1130,16 @@ class KrakenTrades(BaseKrakenWS):
         Parameters:
         -----------
             symbols List[str] or str:
-            api_key: str
-            secret_key: str
+                The symbols to subscribe to.
             trace: bool
+                Whether to trace the websocket messages. Leads to very messy output, so default is False.
             log_trades_every: int
+                The number of trades before writing to a file.
             output_directory: str
-            parquet_flag: bool
+                The directory to log the trades to.
+            output_mode: str
+                The mode to log the trades to. Can be "parquet" or "csv", "sql". Default is parquet, however
+                this is soon to be changed (and potentially deprecated).
         """
 
         if type(symbols) == str:
@@ -977,7 +1151,21 @@ class KrakenTrades(BaseKrakenWS):
         self.log_trades_every = log_trades_every
         self.output_directory = output_directory
         self.all_trades = []
-        self.parquet_flag = parquet_flag
+        self.output_mode = output_mode
+
+        # Initialize the database connection.
+        if output_mode == "sql":
+            self.db = KrackedDB(db_name=f"{self.output_directory}/{db_name}")
+
+            # Connect
+            self.db.connect()
+
+            # Create the table.
+            self.db.create_table("trades")
+
+            # Disconnect
+            self.db.safe_disconnect()
+
 
     def _on_message(self, ws, message):
 
@@ -1008,11 +1196,16 @@ class KrakenTrades(BaseKrakenWS):
 
         if len(self.all_trades) >= self.log_trades_every:
 
-            if self.parquet_flag:
+            if self.output_mode == "parquet":
                 columns = ["ts_event", "symbol", "price", "qty", "side", "ord_type", "trade_id"]
                 df = pd.DataFrame(self.all_trades, columns=columns)
                 table = pa.Table.from_pandas(df)
                 pq.write_to_dataset(table, root_path=f"{self.output_directory}/trades.parquet")
+
+            elif self.output_mode == "sql":
+                self.db.connect()
+                self.db.write_trades(self.all_trades)
+                self.db.safe_disconnect()
 
             else:
                 if not os.path.exists(f"{self.output_directory}/trades.csv"):
