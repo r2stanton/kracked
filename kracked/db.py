@@ -93,7 +93,7 @@ class KrackedDB:
                 # of the SQL table's columns.
                 raise ValueError("Depth must be an integer.")
 
-            columns = ["timestamp"]
+            columns = ["symbol", "timestamp"]
             for i in range(depth):
                 columns.extend( [
                     "ask_px_" + str(i),
@@ -175,7 +175,7 @@ class KrackedDB:
             raise ValueError("Depth must be an integer.")
 
         # We need 4 SQL place holders for each depth level, and one for the timestamp.
-        placeholder = ["?"]*(depth*4+1)
+        placeholder = ["?"]*(depth*4+2)
 
         self.cur.execute(f"INSERT INTO L2 VALUES ({','.join(placeholder)})", l2_data)
 

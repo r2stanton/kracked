@@ -506,6 +506,10 @@ class KrakenL2(BaseKrakenWS):
                                         ) as fil:
                                             fil.write(",".join(line) + "\n")
                                 elif self.output_mode == "sql":
+
+                                    # When writing to the SQL database, we store all books in the same table, 
+                                    # so we need to add the symbol to the line.
+                                    line.insert(0, symbol)
                                     self.db.connect()
                                     self.db.write_L2(line, self.depth)
                                     self.db.safe_disconnect()
