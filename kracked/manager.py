@@ -58,6 +58,7 @@ class KrakenFeedManager:
             log_book_every = L2_params.get("log_book_every", 100)
             append_book = L2_params.get("append_book", True)
             depth = L2_params.get("depth", 10)
+            output_mode = L2_params.get("output_mode", "sql")
 
             self.L2 = KrakenL2(
                 symbols,
@@ -66,42 +67,48 @@ class KrakenFeedManager:
                 depth=depth,
                 log_book_every=log_book_every,
                 append_book=append_book,
+                output_mode=output_mode,
             )
             self.feeds["L2"] = self.L2
         if L3:
             print("KrakenFeedManager: Initializing L3 feed")
             log_ticks_every = L3_params.get("log_ticks_every", 100)
             log_for_webapp = L3_params.get("log_for_webapp", False)
+            output_mode = L3_params.get("output_mode", "sql")
             self.L3 = KrakenL3(
                 symbols,
                 api_key=self.api_key,
                 secret_key=self.api_secret,
                 trace=False,
                 log_ticks_every=log_ticks_every,
-                log_for_webapp=log_for_webapp,
                 output_directory=output_directory,
+                output_mode=output_mode
             )
             self.feeds["L3"] = self.L3
         if ohlc:
             print("KrakenFeedManager: Initializing OHLC feed")
             interval = ohlc_params.get("interval", 5)
             ccxt_snapshot = ohlc_params.get("ccxt_snapshot", False)
+            output_mode = ohlc_params.get("output_mode", "sql")
             self.ohlc = KrakenOHLC(
                 symbols,
                 trace=False,
                 output_directory=output_directory,
                 interval=interval,
                 ccxt_snapshot=ccxt_snapshot,
+                output_mode=output_mode
             )
             self.feeds["ohlc"] = self.ohlc
         if trades:
             print("KrakenFeedManager: Initializing Trades feed")
             log_trades_every = trades_params.get("log_trades_every", 100)
+            output_mode = trades_params.get("output_mode", "sql")
             self.trades = KrakenTrades(
                 symbols,
                 trace=False,
                 log_trades_every=log_trades_every,
                 output_directory=output_directory,
+                output_mode=output_mode
             )
             self.feeds["trades"] = self.trades
         if instruments:
