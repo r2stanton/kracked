@@ -59,45 +59,4 @@ price data, spread, and any entries/exits associated wtih algorithmic trading st
 element is subject to potentially being moved to its own package at some point if it can be
 sufficiently well generalized to different data sources. 
 
-**WARNING** To those using the webapp, it is not yet setup to work with the parquet IO changes.
-
-### Structure currently of the code base:
-```
-├── LICENSE
-├── README.md
-├── examples
-│   ├── L1_example.py
-│   ├── L2_example.py
-│   ├── L3_example.py
-│   ├── OHLC_example.py
-│   ├── ex_multifeed_out
-│   │   ├── ...
-│   ├── ex_out
-│   │   ├── L1.csv
-│   │   ├── L2_BTC_USD_orderbook.csv
-│   │   ├── L2_live_orderbooks.json
-│   │   ├── L3_ticks.csv
-│   │   ├── OHLC.csv
-│   │   └── trades.csv
-│   ├── example_data_loading.ipynb
-│   ├── load_multifeed.ipynb
-│   ├── multifeed_example.py
-│   ├── order_examples.py
-├── kracked
-│   ├── actions.py
-│   ├── core.py
-│   ├── manager.py
-│   ├── feeds.py
-├── kracked_webapp
-│   ├── app.py
-│   ├── data
-│   ├── index.html
-│   ├── script.js
-│   └── style.css
-└── tests
-    ├── README.md
-    ├── data
-    │   └── L2_DOGE_USD_orderbook.csv
-    └── test_l2.py
-
-```
+**WARNING** The webapp is not up to date with the current feed defaults. I am in the process of transitioning this to a bokeh app.
