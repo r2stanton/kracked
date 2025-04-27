@@ -12,11 +12,11 @@ import inspect
 import time
 import os
 
-with open("/home/alg/.api.toml", "r") as fil:
-    data = toml.load(fil)
-api_key = data['kraken_api']
-api_secret = data['kraken_sec']
+# You need to fill these if you want to run the L3 tests.
+# api_key = YOUR_API_KEY
+# api_secret = YOUR_SECRET_KEY
 
+# TODO: Use Fixtures for this.
 if os.path.exists("data"):
     os.system("rm -r data/*")
     os.rmdir("data")
