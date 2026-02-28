@@ -1,8 +1,15 @@
 import websocket, json, threading, hashlib, toml
 import urllib.parse, hmac, base64, time, requests
+import queue as _queue
+
+from kracked.io import KrackedWriter
 
 
 class BaseKrakenWS:
+
+    output_queue = None
+    _standalone_writer = None
+    _standalone_writer_thread = None
 
     def __init__(self, auth=True, trace=False, api_key=None, secret_key=None):
         self.auth = auth
@@ -11,14 +18,43 @@ class BaseKrakenWS:
         self.secret_key = secret_key
         self.ws = None
 
+    def _get_writer_config(self):
+        """
+        Return a dict of kwargs for constructing a KrackedWriter.
+        Subclasses populate attributes like output_mode, output_directory, etc.
+        that this method reads. Falls back to sensible defaults.
+        """
+        return {
+            "output_directory": getattr(self, "output_directory", "."),
+            "output_mode": getattr(self, "output_mode", "sql"),
+            "db_name": getattr(self, "db_name", "kracked_outputs.db"),
+            "convert_to_parquet_every": getattr(self, "convert_to_parquet_every", 1000),
+        }
+
     def launch(self):
         """
-        Starts the websocket thread. For the BaseKrakenWS, this simply opens
-        an authenticated (e.g. you need to provide API/Secret) L3 data stream
-        for BTC/USD.
+        Starts the websocket thread. If no output_queue has been injected
+        (i.e. the feed is running standalone, not through KrakenFeedManager),
+        a KrackedWriter and its consumer thread are automatically created so
+        that all I/O works out of the box.
+
+        For the BaseKrakenWS, this simply opens an authenticated (e.g. you
+        need to provide API/Secret) L3 data stream for BTC/USD.
         """
 
-        # FIXME, do we have a pointless layer of threads here?
+        if self.output_queue is None:
+            self.output_queue = _queue.Queue()
+            writer_cfg = self._get_writer_config()
+            self._standalone_writer = KrackedWriter(
+                output_queue=self.output_queue,
+                **writer_cfg,
+            )
+            self._standalone_writer_thread = threading.Thread(
+                target=self._standalone_writer.run,
+            )
+            self._standalone_writer_thread.daemon = True
+            self._standalone_writer_thread.start()
+
         websocket_thread = threading.Thread(target=self.run_websocket)
         websocket_thread.start()
 
@@ -174,3 +210,9 @@ class BaseKrakenWS:
     def stop_websocket(self):
         if self.ws is not None:
             self.ws.close()
+
+        if self._standalone_writer is not None:
+            self._standalone_writer.stop()
+            self._standalone_writer_thread.join(timeout=5)
+            self._standalone_writer = None
+            self._standalone_writer_thread = None
