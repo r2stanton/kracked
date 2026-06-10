@@ -413,9 +413,12 @@ class KrakenL2(BaseKrakenWS):
                                 bvs = [f"{bv:.9f}" for bv in bvs]
 
                                 most_recent_timestamp = len(data) - 1
+                                recv_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-                                # NOTE TIME MAYBE NOT THE MOST ACCURATE, SHOULD ADD USER LOCAL TIME AS WELL.
-                                line = [str(data[most_recent_timestamp]["timestamp"])]
+                                line = [
+                                    str(data[most_recent_timestamp]["timestamp"]),
+                                    recv_ts,
+                                ]
                                 for i in range(self.depth):
                                     line.extend([aps[i], avs[i], bps[i], bvs[i]])
 
@@ -956,6 +959,7 @@ class KrakenTrades(BaseKrakenWS):
                 if response["type"] in ["update", "snapshot"]:
                     filled_trades = response["data"]
                     for trade in filled_trades:
+                        recv_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         ts_event = trade["timestamp"]
                         symbol = trade["symbol"]
                         price = trade["price"]
@@ -964,7 +968,7 @@ class KrakenTrades(BaseKrakenWS):
                         ord_type = trade["ord_type"]
                         trade_id = trade["trade_id"]
                         self.all_trades.append(
-                            [ts_event, symbol, price, qty, side, ord_type, trade_id]
+                            [ts_event, recv_ts, symbol, price, qty, side, ord_type, trade_id]
                         )
 
                 elif response["type"] == "snapshot":

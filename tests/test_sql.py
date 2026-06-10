@@ -61,7 +61,7 @@ def test_sql_trades():
     res = cur.execute("PRAGMA table_info(trades)")
     column_names = [r[1] for r in res.fetchall()]
 
-    assert column_names == ['ts_event', 'symbol', 'price', 'qty', 'side', 'ord_type', 'trade_id'] , "Columns invalid in trade table"
+    assert column_names == ['ts_event', 'ts_recv', 'symbol', 'price', 'qty', 'side', 'ord_type', 'trade_id'] , "Columns invalid in trade table"
 
 
 def test_ohlc_sql():
@@ -209,7 +209,7 @@ def test_sql_L2():
     res = cur.execute("PRAGMA table_info(L2)")
     column_names = [r[1] for r in res.fetchall()]
 
-    assert column_names == ['timestamp',
+    assert column_names == ['symbol', 'timestamp', 'ts_recv',
                             'ask_px_0',
                             'ask_sz_0',
                             'bid_px_0',

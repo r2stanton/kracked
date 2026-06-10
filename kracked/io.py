@@ -102,7 +102,7 @@ class KrackedDB:
                 # of the SQL table's columns.
                 raise ValueError("Depth must be an integer.")
 
-            columns = ["symbol", "timestamp"]
+            columns = ["symbol", "timestamp", "ts_recv"]
             for i in range(depth):
                 columns.extend( [
                     "ask_px_" + str(i),
@@ -148,6 +148,7 @@ class KrackedDB:
 
             self.cur.execute("""CREATE TABLE IF NOT EXISTS trades (
                                 ts_event text,
+                                ts_recv text,
                                 symbol text,
                                 price numeric,
                                 qty numeric,
@@ -183,8 +184,8 @@ class KrackedDB:
         if not isinstance(depth, int):
             raise ValueError("Depth must be an integer.")
 
-        # We need 4 SQL place holders for each depth level, and one for the timestamp.
-        placeholder = ["?"]*(depth*4+2)
+        # We need 4 SQL place holders for each depth level, plus symbol, timestamp, and ts_recv.
+        placeholder = ["?"]*(depth*4+3)
 
         self.cur.execute(f"INSERT INTO L2 VALUES ({','.join(placeholder)})", l2_data)
 
@@ -211,7 +212,7 @@ class KrackedDB:
         trade_data (List[Any]): The trades data to write.
  
         """
-        self.cur.executemany("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?)", trade_data)
+        self.cur.executemany("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?, ?)", trade_data)
 
     def write_ohlc(self, ohlc_data: List[Any], mode: str) -> None:
 
@@ -400,7 +401,7 @@ class KrackedWriter:
         elif mode in ("csv", "parquet"):
             csv_path = f"{self.output_directory}/L2_{ssymbol}_orderbook.csv"
             if not os.path.exists(csv_path):
-                labels = ["timestamp"]
+                labels = ["timestamp", "ts_recv"]
                 for i in range(depth):
                     labels.extend([
                         "ask_px_" + str(i),
@@ -513,7 +514,7 @@ class KrackedWriter:
         rows = payload["rows"]
 
         if mode == "parquet":
-            columns = ["ts_event", "symbol", "price", "qty", "side", "ord_type", "trade_id"]
+            columns = ["ts_event", "ts_recv", "symbol", "price", "qty", "side", "ord_type", "trade_id"]
             df = pd.DataFrame(rows, columns=columns)
             table = pa.Table.from_pandas(df)
             pq.write_to_dataset(
@@ -525,7 +526,7 @@ class KrackedWriter:
             csv_path = f"{self.output_directory}/trades.csv"
             if not os.path.exists(csv_path):
                 with open(csv_path, "w") as fil:
-                    fil.write("ts_event,symbol,price,qty,side,ord_type,trade_id\n")
+                    fil.write("ts_event,ts_recv,symbol,price,qty,side,ord_type,trade_id\n")
             with open(csv_path, "a") as fil:
                 for trade in rows:
                     fil.write(",".join([str(x) for x in trade]) + "\n")
