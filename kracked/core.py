@@ -1,6 +1,7 @@
 import websocket, json, threading, hashlib, toml
 import urllib.parse, hmac, base64, time, requests
 import queue as _queue
+import datetime
 
 from kracked.io import KrackedWriter
 
@@ -17,6 +18,11 @@ class BaseKrakenWS:
         self.api_key = api_key
         self.secret_key = secret_key
         self.ws = None
+        self.feed_name = None
+        self.log_connections = False
+        self._intentional_stop = False
+        self._has_connected = False
+        self._had_unexpected_disconnect = False
 
     def _get_writer_config(self):
         """
@@ -36,7 +42,9 @@ class BaseKrakenWS:
         Starts the websocket thread. If no output_queue has been injected
         (i.e. the feed is running standalone, not through KrakenFeedManager),
         a KrackedWriter and its consumer thread are automatically created so
-        that all I/O works out of the box.
+        that all I/O works out of the box. This is likely to be deprecated in 
+        a future version, as the KrakenFeedManager is the best-practices way of
+        listening to a websocket.
 
         For the BaseKrakenWS, this simply opens an authenticated (e.g. you
         need to provide API/Secret) L3 data stream for BTC/USD.
@@ -161,6 +169,42 @@ class BaseKrakenWS:
         print(error)
         print(f"===========================================\n")
 
+    def _log_connection_event(self, event, close_status_code=None, close_msg=None):
+        """
+        Enqueue a connection lifecycle event for the writer thread.
+        Only active when log_connections is True and feed_name is set
+        (KrakenFeedManager enables both).
+        """
+        if not self.log_connections or self.feed_name is None or self.output_queue is None:
+            return
+
+        row = [
+            self.feed_name,
+            event,
+            str(datetime.datetime.now()),
+            close_status_code,
+            close_msg,
+        ]
+        self.output_queue.put({"channel": "connections", "rows": [row]})
+
+    def _wrapped_on_open(self, ws):
+        if self.log_connections:
+            if self._had_unexpected_disconnect:
+                self._log_connection_event("reconnect")
+                self._had_unexpected_disconnect = False
+            elif not self._has_connected:
+                self._log_connection_event("initial_start")
+                self._has_connected = True
+            else:
+                self._log_connection_event("reconnect")
+        self._on_open(ws)
+
+    def _wrapped_on_close(self, ws, close_status_code, close_msg):
+        if self.log_connections and not self._intentional_stop:
+            self._log_connection_event("disconnect", close_status_code, close_msg)
+            self._had_unexpected_disconnect = True
+        self._on_close(ws, close_status_code, close_msg)
+
     def _on_close(self, ws, close_status_code, close_msg):
         """
         Close message for Kraken connection.
@@ -197,10 +241,10 @@ class BaseKrakenWS:
 
         self.ws = websocket.WebSocketApp(
             conn,
-            on_open=self._on_open,
+            on_open=self._wrapped_on_open,
             on_message=self._on_message,
             on_error=self._on_error,
-            on_close=self._on_close,
+            on_close=self._wrapped_on_close,
         )
 
         self.is_running = True
@@ -208,6 +252,9 @@ class BaseKrakenWS:
         self.is_running = False
 
     def stop_websocket(self):
+        self._intentional_stop = True
+        if self.log_connections:
+            self._log_connection_event("intentional_stop")
         if self.ws is not None:
             self.ws.close()
 

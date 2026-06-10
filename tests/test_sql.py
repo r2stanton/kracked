@@ -1,5 +1,6 @@
 from kracked.feeds import KrakenL1, KrakenL2, KrakenL3
 from kracked.feeds import KrakenTrades, KrakenOHLC
+from kracked.io import KrackedDB
 
 import sqlite3
 
@@ -21,6 +22,41 @@ if os.path.exists("data"):
     os.system("rm -r data/*")
     os.rmdir("data")
     os.mkdir("data")
+
+def test_sql_connections():
+    """
+    Tests the connections table schema and write path.
+    """
+    db = KrackedDB(db_name="data/kracked_connections.db", overwrite=True)
+    db.connect()
+    db.create_table("connections")
+    db.write_connections([
+        ["L2", "initial_start", "2026-06-09 12:00:00", None, None],
+        ["L2", "disconnect", "2026-06-09 12:05:00", 1006, "connection lost"],
+        ["L2", "reconnect", "2026-06-09 12:05:30", None, None],
+        ["L2", "intentional_stop", "2026-06-09 13:00:00", None, None],
+    ])
+    db.safe_disconnect()
+
+    conn = sqlite3.connect("data/kracked_connections.db")
+    cur = conn.cursor()
+
+    res = cur.execute("SELECT name from sqlite_master where type='table'")
+    table_names = [v[0] for v in res.fetchall()]
+    assert "connections" in table_names, "connections table not created"
+
+    res = cur.execute("PRAGMA table_info(connections)")
+    column_names = [r[1] for r in res.fetchall()]
+    assert column_names == [
+        "feed", "event", "timestamp", "close_status_code", "close_msg"
+    ], "Columns invalid in connections table"
+
+    res = cur.execute("SELECT event FROM connections ORDER BY timestamp")
+    events = [r[0] for r in res.fetchall()]
+    assert events == [
+        "initial_start", "disconnect", "reconnect", "intentional_stop"
+    ], "Connection events not written correctly"
+
 
 def test_sql_trades():
     """

@@ -31,11 +31,14 @@ class KrakenFeedManager:
         trades_params={},
         instruments_params={},
         db_name="kracked_outputs.db",
+        monitor_reconnects=True,
     ):
         self.api_key = api_key
         self.api_secret = api_secret
         self.symbols = symbols
         self.output_directory = output_directory
+        self.db_name = db_name
+        self.monitor_reconnects = monitor_reconnects
 
         self.L1 = None
         self.L2 = None
@@ -66,7 +69,7 @@ class KrakenFeedManager:
                 output_directory=output_directory,
                 output_mode=output_mode,
             )
-            self.L1.output_queue = self.output_queue
+            self._configure_feed(self.L1, "L1")
             self.feeds["L1"] = self.L1
         if L2:
             print("KrakenFeedManager: Initializing L2 feed")
@@ -86,7 +89,7 @@ class KrakenFeedManager:
                 append_book=append_book,
                 output_mode=output_mode,
             )
-            self.L2.output_queue = self.output_queue
+            self._configure_feed(self.L2, "L2")
             self.feeds["L2"] = self.L2
         if L3:
             print("KrakenFeedManager: Initializing L3 feed")
@@ -102,7 +105,7 @@ class KrakenFeedManager:
                 output_directory=output_directory,
                 output_mode=output_mode
             )
-            self.L3.output_queue = self.output_queue
+            self._configure_feed(self.L3, "L3")
             self.feeds["L3"] = self.L3
         if ohlc:
             print("KrakenFeedManager: Initializing OHLC feed")
@@ -118,7 +121,7 @@ class KrakenFeedManager:
                 ccxt_snapshot=ccxt_snapshot,
                 output_mode=output_mode
             )
-            self.ohlc.output_queue = self.output_queue
+            self._configure_feed(self.ohlc, "ohlc")
             self.feeds["ohlc"] = self.ohlc
         if trades:
             print("KrakenFeedManager: Initializing Trades feed")
@@ -132,14 +135,14 @@ class KrakenFeedManager:
                 output_directory=output_directory,
                 output_mode=output_mode
             )
-            self.trades.output_queue = self.output_queue
+            self._configure_feed(self.trades, "trades")
             self.feeds["trades"] = self.trades
         if instruments:
             print("KrakenFeedManager: Initializing Instruments feed")
             self.instruments = KrakenInstruments(
                 trace=False, output_directory=output_directory
             )
-            self.instruments.output_queue = self.output_queue
+            self._configure_feed(self.instruments, "instruments")
             self.feeds["instruments"] = self.instruments
 
         # Single writer thread for all I/O.
@@ -154,6 +157,30 @@ class KrakenFeedManager:
         # Threads list
         self.threads = {}
         self._writer_thread = None
+        self._monitor_thread = None
+        self._stop_monitor = False
+
+    def _configure_feed(self, feed, feed_name):
+        """Wire a feed into the shared writer and enable connection logging."""
+        feed.output_queue = self.output_queue
+        feed.feed_name = feed_name
+        feed.log_connections = True
+
+    def _monitor_feed_threads(self):
+        """Restart feed threads that died from an unexpected disconnect."""
+        while not self._stop_monitor:
+            time.sleep(1)
+            for name, thread in list(self.threads.items()):
+                if thread.is_alive():
+                    continue
+                feed = self.feeds[name]
+                if feed._intentional_stop:
+                    continue
+                print(f"{name} thread died, restarting...")
+                restarted_thread = threading.Thread(target=feed.launch)
+                restarted_thread.daemon = True
+                restarted_thread.start()
+                self.threads[name] = restarted_thread
 
     def start_all(self):
         # Start the single writer thread.
@@ -170,7 +197,18 @@ class KrakenFeedManager:
             self.threads[name] = thread
             print(f"Started WebSocket thread for {feed.__class__.__name__}")
 
+        if self.monitor_reconnects:
+            self._stop_monitor = False
+            self._monitor_thread = threading.Thread(target=self._monitor_feed_threads)
+            self._monitor_thread.daemon = True
+            self._monitor_thread.start()
+            print("Started connection monitor thread.")
+
     def stop_all(self):
+        self._stop_monitor = True
+        if self._monitor_thread is not None:
+            self._monitor_thread.join(timeout=2)
+
         # Stop all feed websockets.
         for name, feed in self.feeds.items():
             feed.stop_websocket()

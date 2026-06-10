@@ -45,18 +45,9 @@ all_feeds = KrakenFeedManager(
 all_feeds.start_all()
 
 try:
-    # Checks the status of all feed threads and restarts any that have died.
+    # KrakenFeedManager monitors and restarts dead feed threads by default.
     while True:
         time.sleep(1)
-
-        for name, thread in list(all_feeds.threads.items()):
-            if not thread.is_alive():
-                print(f"{name} thread died, restarting...")
-                curr_feed = all_feeds.feeds[name]
-                restarted_thread = threading.Thread(target=curr_feed.launch)
-                restarted_thread.daemon = True
-                restarted_thread.start()
-                all_feeds.threads[name] = restarted_thread
 
 except KeyboardInterrupt:
     print("Shutting down feeds...")

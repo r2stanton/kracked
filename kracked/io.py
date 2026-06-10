@@ -72,7 +72,7 @@ class KrackedDB:
 
     def create_table(self, table_name: str, depth: Union[None, int] = None) -> None:
 
-        valids = ["L1", "L2", "L3", "OHLC", "trades"]
+        valids = ["L1", "L2", "L3", "OHLC", "trades", "connections"]
         if table_name not in valids:
             raise ValueError(f"Invalid table name: {table_name}, select from {valids}")
 
@@ -157,6 +157,16 @@ class KrackedDB:
                                 trade_id numeric
             )""")
 
+        elif table_name == "connections":
+
+            self.cur.execute("""CREATE TABLE IF NOT EXISTS connections (
+                                feed text,
+                                event text,
+                                timestamp text,
+                                close_status_code integer,
+                                close_msg text
+                            )""")
+
     def write_L1(self, l1_data: List[Any]) -> None:
         """
         Write L1 data to the database.
@@ -230,6 +240,18 @@ class KrackedDB:
         elif mode == "update":
             self.cur.execute("INSERT INTO OHLC VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ohlc_data)
 
+    def write_connections(self, connection_data: List[Any]) -> None:
+        """
+        Write connection lifecycle events to the database.
+
+        Parameters
+        ----------
+        connection_data (List[Any]): Rows of [feed, event, timestamp, close_status_code, close_msg].
+        """
+        self.cur.executemany(
+            "INSERT INTO connections VALUES (?, ?, ?, ?, ?)", connection_data
+        )
+
 
 class KrackedWriter:
     """
@@ -248,6 +270,7 @@ class KrackedWriter:
         {"channel": "trades","rows": [[ts, sym, price, ...], ...]}
         {"channel": "instruments", "pairs": [...], "assets": [...], "keys": [...], "header_assets": [...]}
         {"channel": "webapp_l2", "books": {symbol: {"bids": ..., "asks": ...}}}
+        {"channel": "connections", "rows": [[feed, event, ts, close_code, close_msg], ...]}
         None  -- sentinel that causes the writer to flush and exit.
 
     Parameters
@@ -349,6 +372,8 @@ class KrackedWriter:
             self._write_instruments(payload)
         elif channel == "webapp_l2":
             self._write_webapp_l2(payload)
+        elif channel == "connections":
+            self._write_connections(payload)
 
     # ------------------------------------------------------------------
     # L1
@@ -569,3 +594,15 @@ class KrackedWriter:
         books = payload["books"]
         with open(f"{self.output_directory}/L2_live_orderbooks.json", "w") as fil:
             json.dump(books, fil)
+
+    # ------------------------------------------------------------------
+    # Connections (always SQL; managed by KrakenFeedManager)
+    # ------------------------------------------------------------------
+
+    def _write_connections(self, payload):
+        rows = payload["rows"]
+        self._ensure_table("connections")
+        self._ensure_db()
+        self.db.connect()
+        self.db.write_connections(rows)
+        self.db.safe_disconnect()
