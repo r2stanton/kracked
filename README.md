@@ -18,45 +18,6 @@ However in the meanwhile, simply clone the repository, navigate to the folder wi
 
 ```pip install -e .``` for an editable install.
 
-## Comments
-The `kracked` package is still in pre-release and should be considered highly 
-experimental. Do not build out any excessively time-intensive routines using 
-the package as many things are subject to change (in the near future). The code
-is relased AS-IS and the developers are not responsible for any bugs,
-misbehavior of the code, or anything of the sort. Any loss of funds resulting from
-the utilization of this code is 100% the responsibilty of the user.
-
 ## Usage
 Users can find a set of example scripts in the examples folder. A couple notes 
 about using these files.
-
-1. Ensure that your outputs correspond (qualitatively) to those in the `ex_out/` 
-folder if you are using the single-threaded approaches in the `examples/` folder.
-2. `kracked` supports multithreaded feeds using the `kracked/manager.py` module. If
-you choose to use this approach, ensure that your outputs correspond (again 
-qualitatively) to those in `examples/ex_multifeed_out/`. This makes it simple to 
-spin up a feed subscribing to multiple Kraken v2 API endpoints using a single
-core. See the `multifeed_examples.py` file.
-
-***IMPORTANT*** See the logic in `multifeed_examples.py` for a way to have the connections automatically
-reconnect to the Websocket in the event of one feed timing out.
-
-
-4. Examples of how to load and parse the data are available in the 
-`example_data_loading.ipynb` files. These are for the older .csv formats, but shortly I'll update these
-with the parquet I/O.
-
-6. For now, order execution simply relies on the CCXT->Kraken REST API. This
-will change in the near future, but keep in mind that ANY algorithmic trading
-strategies are 100% subject to be rendered incompatible with EITHER changes in 
-CCXT, or changes associated with order placement using the Kraken REST API.
-
-## Webapp
-Check back soon for more information on the webapp. I'll be integrating features for tracking 
-live performance, multiple symbols and the like. For now, consider it highly experimental, but 
-feel free to play with the app.py files/settings. It can currently visualize the live L2 book,
-price data, spread, and any entries/exits associated wtih algorithmic trading strategies. This
-element is subject to potentially being moved to its own package at some point if it can be
-sufficiently well generalized to different data sources. 
-
-**WARNING** The webapp is not up to date with the current feed defaults. I am in the process of transitioning this to a bokeh app.
