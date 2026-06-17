@@ -19,5 +19,4 @@ However in the meanwhile, simply clone the repository, navigate to the folder wi
 ```pip install -e .``` for an editable install.
 
 ## Usage
-Users can find a set of example scripts in the examples folder. A couple notes 
-about using these files.
+Users can find a set of example scripts in the examples folder. All scripts here are presented as-is and should be verified/stress tested as needed by the user.
