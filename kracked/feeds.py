@@ -5,9 +5,11 @@ from zlib import crc32 as CRC32
 import numpy as np
 import toml, json, os
 import datetime
-import ccxt, time
 import copy
-from typing import Union, List
+from typing import Union, List, Optional
+
+from kracked.history import format_ohlc_rows
+from kracked.rest import KrakenREST
 
 
 class KrakenL1(BaseKrakenWS):
@@ -40,9 +42,10 @@ class KrakenL1(BaseKrakenWS):
         if type(symbols) == str:
             symbols = [symbols]
 
+        super().__init__(
+            auth=False, trace=trace, api_key=api_key, secret_key=secret_key
+        )
         self.symbols = symbols
-        self.auth = False
-        self.trace = trace
         self.output_directory = output_directory
         self.output_mode = output_mode
         self.db_name = db_name
@@ -211,12 +214,13 @@ class KrakenL2(BaseKrakenWS):
         if type(symbols) == str:
             symbols = [symbols]
 
+        super().__init__(
+            auth=False, trace=trace, api_key=api_key, secret_key=secret_key
+        )
         self.depth = depth
         self.symbols = symbols
         self.updated = {s: False for s in symbols}
         self.books = {s: {} for s in symbols}
-        self.auth = False
-        self.trace = trace
         self.log_book_every = log_book_every
         self.ask_prices = {s: [0.0] * self.depth for s in symbols}
         self.bid_prices = {s: [0.0] * self.depth for s in symbols}
@@ -565,10 +569,11 @@ class KrakenL3(BaseKrakenWS):
         if type(symbols) == str:
             symbols = [symbols]
 
+        super().__init__(
+            auth=True, trace=trace, api_key=api_key, secret_key=secret_key
+        )
         self.symbols = symbols
-        self.auth = True
-        self.trace = trace
-        self.api_key = api_key
+        # L3 _on_open uses api_secret; BaseKrakenWS stores secret_key.
         self.api_secret = secret_key
         self.depth = depth
         self.log_ticks_every = log_ticks_every
@@ -703,6 +708,7 @@ class KrakenOHLC(BaseKrakenWS):
         interval: int = 5,
         output_directory: str = ".",
         ccxt_snapshot: bool = False,
+        rest_snapshot: Optional[bool] = None,
         output_mode: str = "csv",
         db_name: str = "kracked_outputs.db",
     ):
@@ -721,9 +727,11 @@ class KrakenOHLC(BaseKrakenWS):
             output_directory: str
                 The directory to log the OHLC data to.
             ccxt_snapshot: bool
-                Whether to use the CCXT snapshot method. If true, it uses CCXT to get the snapshot data, because it uses
-                the REST API, which has a further lookback period then the Websocket API. Eventually I may implement the 
-                REST API myself to avoid the dependency, but for now this suffices.
+                Deprecated alias for rest_snapshot. Kept so existing examples
+                continue to work. When true, seed ~720 REST candles on connect.
+            rest_snapshot: bool or None
+                Whether to seed history from Kraken REST (up to 720 candles,
+                including VWAP and trade count). If None, follows ccxt_snapshot.
             output_mode: str
                 The mode to output the data in. Acceptable values are "csv" and "sql". There is really no point in using
                 parquets with the OHLCs, because the data is so infrequently updated, and it makes the most sense to write
@@ -742,14 +750,17 @@ class KrakenOHLC(BaseKrakenWS):
         if type(symbols) == str:
             symbols = [symbols]
 
-        # Initialize the symbols, authentication, tracing, and OHLC data storage.
+        super().__init__(auth=False, trace=trace)
+        # Initialize the symbols and OHLC data storage.
         self.symbols = symbols
-        self.auth = False
-        self.trace = trace
         self.ticks = []
         self.interval = interval
         self.output_directory = output_directory
-        self.ccxt_snapshot = ccxt_snapshot
+        if rest_snapshot is None:
+            rest_snapshot = ccxt_snapshot
+        self.rest_snapshot = bool(rest_snapshot)
+        # Keep the old name so examples/tests that read it still work.
+        self.ccxt_snapshot = self.rest_snapshot
         self.output_mode = output_mode
         self.db_name = db_name
 
@@ -805,7 +816,7 @@ class KrakenOHLC(BaseKrakenWS):
 
                 elif response["type"] == "snapshot":
 
-                    if not self.ccxt_snapshot:
+                    if not self.rest_snapshot:
 
                         full_data = response["data"]
                         assert len(full_data) > 1, "Data shorter than expected"
@@ -868,38 +879,25 @@ class KrakenOHLC(BaseKrakenWS):
 
         ws.send(json.dumps(subscription))
 
-        # Optionally use CCXT for the historical candles, because they 
-        # provide mode than the snapshot directly from the websocket. 
-        # Take care that these do not have all of the information that 
-        # one can obtain from the websocket (e.g. VWAP)
-        if self.ccxt_snapshot:
-            k = ccxt.kraken()
+        # Optionally seed from REST. Native OHLC includes VWAP and trade count
+        # (the old CCXT snapshot did not). Kraken still caps this at 720 bars.
+        if self.rest_snapshot:
+            rest = KrakenREST()
             info_lines = []
-            for symbol in self.symbols:
-                candles = k.fetch_ohlcv(symbol, timeframe=f"{self.interval}m")
-                for c in candles:
-                    curr_data = []
-                    ts_raw = c[0]/1000
-                    formatted_timestamp = datetime.datetime.utcfromtimestamp(ts_raw).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+            try:
+                for symbol in self.symbols:
+                    _, candles, _ = rest.get_ohlc(symbol, interval=self.interval)
+                    info_lines.extend(format_ohlc_rows(symbol, self.interval, candles))
+            except Exception as exc:
+                print(f"REST OHLC snapshot failed: {exc}")
+                info_lines = []
 
-                    curr_data = [formatted_timestamp,
-                                    symbol,
-                                    str(c[1]),                  # open
-                                    str(c[2]),                  # high
-                                    str(c[3]),                  # low
-                                    str(c[4]),                  # close
-                                    str(c[5]),                  # volume
-                                    "NaN",                 # vwap placeholder
-                                    "NaN",                 # trades placeholder
-                                    "NaN",                 # tstart placeholder
-                                    "NaN"]                 # ttrue placeholder
-                    info_lines.append(curr_data)
-
-            self.output_queue.put({
-                "channel": "OHLC",
-                "mode": "snapshot",
-                "rows": info_lines,
-            })
+            if info_lines:
+                self.output_queue.put({
+                    "channel": "OHLC",
+                    "mode": "snapshot",
+                    "rows": info_lines,
+                })
 
 class KrakenTrades(BaseKrakenWS):
     """
@@ -939,9 +937,8 @@ class KrakenTrades(BaseKrakenWS):
         if type(symbols) == str:
             symbols = [symbols]
 
+        super().__init__(auth=False, trace=trace)
         self.symbols = symbols
-        self.auth = False
-        self.trace = trace
         self.log_trades_every = log_trades_every
         self.output_directory = output_directory
         self.all_trades = []
@@ -999,8 +996,7 @@ class KrakenTrades(BaseKrakenWS):
 class KrakenInstruments(BaseKrakenWS):
     def __init__(self, trace=False, output_directory="."):
 
-        self.auth = False
-        self.trace = trace
+        super().__init__(auth=False, trace=trace)
         self.output_directory = output_directory
 
     def _on_message(self, ws, message):

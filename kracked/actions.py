@@ -1,67 +1,51 @@
-import json, threading, time, toml
-from kracked.core import BaseKrakenWS
-from datetime import datetime, timezone
-
 import warnings
-import ccxt
+
+from kracked.rest import KrakenREST, KrakenRESTError
+
+
+def _as_rest(client):
+    if isinstance(client, KrakenREST):
+        return client
+    raise TypeError(
+        "Expected a KrakenREST instance. kracked no longer uses ccxt; "
+        "construct one with KrakenREST(api_key=..., api_secret=...)."
+    )
 
 
 class KrakenPortfolio:
-    """
+    """Thin wrapper around Kraken private REST for balances and open orders."""
 
-    Thin wrapper around ccxt functionalities with some additional niceties specific
-    to this package and the Kraken API.
-
-    """
-
-    def __init__(self, kraken_ccxt):
-        self.kraken_ccxt = kraken_ccxt
-
-        # After these functions:
-
-        # self.open_orders is set.
+    def __init__(self, kraken_rest):
+        self.kraken_rest = _as_rest(kraken_rest)
         self.get_open_orders()
-
-        # self.balances is set.
         self.get_balances()
 
     def get_balances(self):
-
-        total_bals = self.kraken_ccxt.fetch_balance()["total"]
-
-        self.balances = total_bals
+        self.balances = self.kraken_rest.get_balance()
 
     def get_open_orders(self, static_exchange=None):
-
-        all_open_orders = self.kraken_ccxt.fetch_open_orders()
+        result = self.kraken_rest.get_open_orders()
+        open_orders = result.get("open") or {}
         relevant_order_info = []
         unique_symbols = []
 
-        for ord in all_open_orders:
-            oid = ord["id"]
-            oinfo = ord["info"]
-
-            symbol = ord["symbol"]
+        for oid, ord_info in open_orders.items():
+            descr = ord_info.get("descr") or {}
+            pair = descr.get("pair", "")
+            symbol = self.kraken_rest.display_symbol(pair)
             if symbol not in unique_symbols:
                 unique_symbols.append(symbol)
-
-            status = ord["status"]
-            open_time = ord["timestamp"]
-            price = ord["price"]
-            qty = ord["amount"]
-            qty_exec = ord["filled"]
-            side = ord["side"]
 
             relevant_order_info.append(
                 {
                     "id": oid,
                     "symbol": symbol,
-                    "status": status,
-                    "open_time": open_time,
-                    "price": price,
-                    "qty": qty,
-                    "qty_exec": qty_exec,
-                    "side": side,
+                    "status": ord_info.get("status"),
+                    "open_time": ord_info.get("opentm"),
+                    "price": descr.get("price") or ord_info.get("price"),
+                    "qty": ord_info.get("vol"),
+                    "qty_exec": ord_info.get("vol_exec"),
+                    "side": descr.get("type"),
                 }
             )
 
@@ -72,7 +56,7 @@ class KrakenPortfolio:
 
 
 def add_order(
-    kraken_ccxt,
+    kraken_rest,
     order_type,
     symbol,
     side,
@@ -87,9 +71,8 @@ def add_order(
     post_only=False,
     action_price=None,
 ):
+    client = _as_rest(kraken_rest)
 
-    # Checks that the input are valid and that the requested order has the necessary
-    # information to be carried out for the user.
     if safe_mode:
         if order_type not in ["market", "stop-loss", "take-profit"]:
             assert (
@@ -103,115 +86,84 @@ def add_order(
             raise ValueError("Amount must be a number for buy orders.")
         if amount == "all":
             warnings.warn(
-                "Caution, requiring CCXT to fetch your balances is a slow approach "
+                "Caution, fetching balances to size an 'all' order is a slow approach "
                 "don't use for HFT strategies."
             )
-            amount = kraken_ccxt.fetch_balance()["total"][symbol.split("/")[0]]
+            amount = client.get_balance()[symbol.split("/")[0]]
+
+    payload = {
+        "ordertype": order_type,
+        "type": side,
+        "volume": str(amount),
+        "pair": symbol,
+        "price": None if price is None else str(price),
+        "validate": validate,
+        "timeinforce": time_in_force,
+        "trigger": trigger,
+        "leverage": None if leverage is None else str(leverage),
+        "displayvol": None if displayvol is None else str(displayvol),
+    }
+    if post_only:
+        payload["oflags"] = "post"
+    if action_price is not None:
+        payload["price2"] = str(action_price)
 
     try:
-        if order_type == "market":
-            result = kraken_ccxt.create_order(
-                symbol,
-                order_type,
-                side,
-                amount,
-                price,
-                params={"validate": validate, "time_in_force": time_in_force},
-            )
-            print(f"Order placed successfully: {result}")
-        elif order_type == "limit":
-            result = kraken_ccxt.create_order(
-                symbol,
-                order_type,
-                side,
-                amount,
-                price,
-                params={
-                    "validate": validate,
-                    "time_in_force": time_in_force,
-                    "postOnly": post_only,
-                },
-            )
-
-        elif order_type in ["take-profit-limit", "stop-loss-limit"]:
-            print(price)
-            result = kraken_ccxt.create_order(
-                symbol,
-                order_type,
-                side,
-                amount,
-                price,
-                params={
-                    "validate": validate,
-                    "time_in_force": time_in_force,
-                    "postOnly": post_only,
-                    "price2": 0.19,
-                },
-            )
-            print(f"Order placed successfully: {result}")
-
-        elif order_type in ["take-profit", "stop-loss"]:
-            print("Here in take-profit or stop-loss")
-            result = kraken_ccxt.create_order(
-                symbol, order_type, side, amount, price
-            )  # Set price to None
-            #   params={"triggerPrice": price})  # Use price as triggerPrice
-            print(f"Order placed successfully: {result}")
-
-    except ccxt.NetworkError as e:
-        print(f"Network error occurred: {e}")
-        return {}
-    except ccxt.ExchangeError as e:
+        result = client.add_order(**payload)
+        txid = (result.get("txid") or [None])[0]
+        print(f"Order placed successfully: {result}")
+        return {
+            "id": txid,
+            "txid": result.get("txid"),
+            "descr": result.get("descr"),
+            "info": result,
+        }
+    except KrakenRESTError as e:
         print(f"Exchange error occurred: {e}")
         return {}
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         return {}
 
-    return result
 
-
-def cancel_order(kraken_ccxt, order_id):
-
+def cancel_order(kraken_rest, order_id):
+    client = _as_rest(kraken_rest)
     try:
-        response = kraken_ccxt.cancel_order(order_id)
-    except ccxt.NetworkError as e:
-        print(f"Network error occurred: {e}")
-        return {}
-    except ccxt.ExchangeError as e:
+        response = client.cancel_order(order_id)
+        return response
+    except KrakenRESTError as e:
         print(f"Exchange error occurred: {e}")
         return {}
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-    return response
+        return {}
 
 
-def cancel_all_by_symbol(kraken_ccxt, symbol, open_orders=None):
+def cancel_all_by_symbol(kraken_rest, symbol, open_orders=None):
+    client = _as_rest(kraken_rest)
 
     if open_orders is None:
-        kp = KrakenPortfolio(kraken_ccxt)
+        kp = KrakenPortfolio(client)
         open_orders = kp.open_orders
 
     if symbol not in open_orders.keys():
         print(f"No open orders for {symbol}")
         return None
 
-    open_orders_for_symbol = open_orders[symbol]
-    # print(open_orders_for_symbol)
-
-    for o in open_orders_for_symbol:
-        cancel_order(kraken_ccxt, o["id"])
+    for o in open_orders[symbol]:
+        cancel_order(client, o["id"])
 
 
-def cancel_all(kraken_ccxt, open_orders=None):
+def cancel_all(kraken_rest, open_orders=None):
+    client = _as_rest(kraken_rest)
 
     if open_orders is None:
-        kp = KrakenPortfolio(kraken_ccxt)
-        open_orders = kp.open_orders
+        try:
+            return client.cancel_all()
+        except KrakenRESTError as e:
+            print(f"Exchange error occurred: {e}")
+            return {}
 
     for symbol in open_orders.keys():
-        open_orders_for_symbol = open_orders[symbol]
-        # print(open_orders_for_symbol)
-
-        for o in open_orders_for_symbol:
-            cancel_order(kraken_ccxt, o["id"])
+        for o in open_orders[symbol]:
+            cancel_order(client, o["id"])

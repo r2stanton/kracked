@@ -352,7 +352,12 @@ class KrackedWriter:
 
     def stop(self):
         """Send the sentinel to shut down the writer loop."""
-        self.output_queue.put(None)
+        if self.output_queue is not None:
+            self.output_queue.put(None)
+
+    def write(self, payload):
+        """Write a single payload synchronously (used by REST history pulls)."""
+        self._dispatch(payload)
 
     def _dispatch(self, payload):
         """Route a payload to the appropriate write method."""

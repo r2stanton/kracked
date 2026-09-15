@@ -111,6 +111,7 @@ class KrakenFeedManager:
             print("KrakenFeedManager: Initializing OHLC feed")
             interval = ohlc_params.get("interval", 5)
             ccxt_snapshot = ohlc_params.get("ccxt_snapshot", False)
+            rest_snapshot = ohlc_params.get("rest_snapshot", ccxt_snapshot)
             output_mode = ohlc_params.get("output_mode", "sql")
             channel_modes["OHLC"] = output_mode
             self.ohlc = KrakenOHLC(
@@ -119,6 +120,7 @@ class KrakenFeedManager:
                 output_directory=output_directory,
                 interval=interval,
                 ccxt_snapshot=ccxt_snapshot,
+                rest_snapshot=rest_snapshot,
                 output_mode=output_mode
             )
             self._configure_feed(self.ohlc, "ohlc")

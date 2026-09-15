@@ -1,9 +1,10 @@
-import websocket, json, threading, hashlib, toml
-import urllib.parse, hmac, base64, time, requests
+import websocket, json, threading
+import time, requests
 import queue as _queue
 import datetime
 
 from kracked.io import KrackedWriter
+from kracked.rest import kraken_signature
 
 
 class BaseKrakenWS:
@@ -94,13 +95,7 @@ class BaseKrakenWS:
 
 
         """
-        postdata = urllib.parse.urlencode(data)
-        encoded = (str(data["nonce"]) + postdata).encode()
-        message = urlpath.encode() + hashlib.sha256(encoded).digest()
-        mac = hmac.new(base64.b64decode(secret), message, hashlib.sha512)
-        sigdigest = base64.b64encode(mac.digest())
-
-        return sigdigest.decode()
+        return kraken_signature(urlpath, data, secret)
 
     def get_ws_token(self, api_key, api_secret):
         """
